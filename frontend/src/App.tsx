@@ -1,100 +1,65 @@
 import { useState } from 'react';
-import { uploadFile, askQuestion } from './api';
+import UploadPanel from './components/UploadPanel';
+import ChatArea from './components/ChatArea';
+import FolderView from './components/FolderView';
+import SquareView from './components/SquareView';
+import UserProfileView from './components/UserProfileView';
+import FavoriteView from './components/FavoriteView'; // 👈 确保引入了
+import { getCurrentUser } from './api';
 
 function App() {
-  const [file, setFile] = useState<File | null>(null);
-  const [question, setQuestion] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [messages, setMessages] = useState<{ role: 'user' | 'ai'; text: string; sources?: any[] }[]>([]);
+  const [activeTab, setActiveTab] = useState<'chat' | 'upload' | 'folder' | 'square' | 'profile' | 'favorite'>('chat');
+  const [currentUser, setCurrentUser] = useState(getCurrentUser());
+  const [viewingUserId, setViewingUserId] = useState(''); 
 
-  const handleUpload = async () => {
-    if (!file) return alert('请先选择文件');
-    try {
-      setLoading(true);
-      const res = await uploadFile(file);
-      alert(`上传成功！切分成了 ${res.chunks_count} 个片段。`);
-    } catch (err) {
-      console.error(err);
-      alert('上传失败，请看后端终端报错');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleAsk = async () => {
-    if (!question.trim()) return;
-    const userMsg = question;
-    setMessages((prev) => [...prev, { role: 'user', text: userMsg }]);
-    setQuestion('');
-    setLoading(true);
-
-    try {
-      const res = await askQuestion(userMsg);
-      setMessages((prev) => [
-        ...prev,
-        { role: 'ai', text: res.answer, sources: res.sources },
-      ]);
-    } catch (err) {
-      console.error(err);
-      setMessages((prev) => [...prev, { role: 'ai', text: '请求出错了，请看后端终端。' }]);
-    } finally {
-      setLoading(false);
-    }
+  const handleSwitchUser = (e: any) => {
+    const user = e.target.value === 'zhangsan' 
+      ? { id: 'u_zhangsan', name: '张三', avatar: '🧑‍💻' }
+      : { id: 'u_lisi', name: '李四', avatar: '👩‍💻' };
+    localStorage.setItem('currentUser', JSON.stringify(user));
+    setCurrentUser(user);
+    window.location.reload(); 
   };
 
   return (
-    <div style={{ maxWidth: '800px', margin: '0 auto', padding: '20px', fontFamily: 'sans-serif' }}>
-      <h1>个人知识库</h1>
+    <div className="app-layout">
+      <div className="sidebar">
+        <h2 className="sidebar-title">🧠 知识库</h2>
+        
+        <div className={`nav-item ${activeTab === 'chat' ? 'active' : ''}`} onClick={() => setActiveTab('chat')}>💬 AI 智能问答</div>
+        <div className={`nav-item ${activeTab === 'upload' ? 'active' : ''}`} onClick={() => setActiveTab('upload')}>📤 资料上传收录</div>
+        <div className={`nav-item ${activeTab === 'folder' ? 'active' : ''}`} onClick={() => setActiveTab('folder')}>📁 我的资料库</div>
+        
+        {/* 👇 确保这里有我的收藏 */}
+        <div className={`nav-item ${activeTab === 'favorite' ? 'active' : ''}`} onClick={() => setActiveTab('favorite')}>⭐️ 我的收藏</div>
+        
+        <div className={`nav-item ${activeTab === 'square' ? 'active' : ''}`} onClick={() => setActiveTab('square')}>🌐 公共广场</div>
 
-      <div style={{ border: '1px solid #ccc', padding: '15px', marginBottom: '20px', borderRadius: '8px' }}>
-        <h3>1. 上传资料 (.md)</h3>
-        <input type="file" accept=".md" onChange={(e) => setFile(e.target.files?.[0] || null)} />
-        <button onClick={handleUpload} disabled={loading || !file} style={{ marginLeft: '10px' }}>
-          上传
-        </button>
+        <div style={{ marginTop: 'auto', padding: '15px', borderTop: '1px solid #eee' }}>
+          <div style={{ marginBottom: '10px', fontWeight: 'bold' }}>
+            {currentUser.avatar} {currentUser.name}
+          </div>
+          <select onChange={handleSwitchUser} value={currentUser.id === 'u_zhangsan' ? 'zhangsan' : 'lisi'} style={{ width: '100%', padding: '5px' }}>
+            <option value="zhangsan">切换为：张三</option>
+            <option value="lisi">切换为：李四</option>
+          </select>
+        </div>
       </div>
 
-      <div style={{ border: '1px solid #ccc', padding: '15px', borderRadius: '8px', minHeight: '300px', display: 'flex', flexDirection: 'column' }}>
-        <h3>2. 提问</h3>
-        <div style={{ flex: 1, overflowY: 'auto', marginBottom: '10px' }}>
-          {messages.map((msg, i) => (
-            <div key={i} style={{ marginBottom: '15px', textAlign: msg.role === 'user' ? 'right' : 'left' }}>
-              <div style={{
-                display: 'inline-block',
-                padding: '10px',
-                borderRadius: '8px',
-                backgroundColor: msg.role === 'user' ? '#d1e7dd' : '#f8d7da',
-                maxWidth: '80%',
-                textAlign: 'left'
-              }}>
-                <div style={{ whiteSpace: 'pre-wrap' }}>{msg.text}</div>
-                {msg.sources && msg.sources.length > 0 && (
-                  <div style={{ marginTop: '10px', fontSize: '12px', color: '#555', borderTop: '1px dashed #aaa', paddingTop: '5px' }}>
-                    <strong>参考来源：</strong>
-                    {msg.sources.map((s, idx) => (
-                      <div key={idx} style={{ marginTop: '5px', backgroundColor: '#fff', padding: '5px', borderRadius: '4px' }}>
-                        [{idx + 1}] {s.content.slice(0, 50)}...
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-        <div style={{ display: 'flex' }}>
-          <input
-            type="text"
-            value={question}
-            onChange={(e) => setQuestion(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleAsk()}
-            placeholder="输入你的问题..."
-            style={{ flex: 1, padding: '8px', marginRight: '10px' }}
-          />
-          <button onClick={handleAsk} disabled={loading} style={{ padding: '8px 15px' }}>
-            发送
-          </button>
-        </div>
+      <div className="main-content">
+        {activeTab === 'chat' && <><h1 className="page-title">AI 智能问答</h1><ChatArea /></>}
+        {activeTab === 'upload' && <><h1 className="page-title">资料上传收录</h1><UploadPanel /></>}
+        {activeTab === 'folder' && <FolderView />}
+        
+        {/* 👇 确保这里有我的收藏渲染 */}
+        {activeTab === 'favorite' && <FavoriteView />}
+        
+        {activeTab === 'square' && (
+          <SquareView onViewUser={(uid) => { setViewingUserId(uid); setActiveTab('profile'); }} />
+        )}
+        {activeTab === 'profile' && (
+          <UserProfileView userId={viewingUserId} onBack={() => setActiveTab('square')} />
+        )}
       </div>
     </div>
   );

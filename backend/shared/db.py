@@ -25,3 +25,22 @@ def get_db():
         yield db
     finally:
         db.close()
+
+def init_db():
+    """建表：导入所有模型后调用 create_all"""
+    from modules.ingest.domain import models
+    from modules.manage.domain import models as manage_models
+    Base.metadata.create_all(bind=engine)
+    
+    # 👇 新增：初始化几个虚拟用户，方便测试社交功能
+    from modules.ingest.domain.models import User
+    db = SessionLocal()
+    try:
+        if db.query(User).count() == 0:
+            u1 = User(id="u_zhangsan", nickname="张三", avatar="🧑‍💻")
+            u2 = User(id="u_lisi", nickname="李四", avatar="👩‍💻")
+            db.add(u1)
+            db.add(u2)
+            db.commit()
+    finally:
+        db.close()

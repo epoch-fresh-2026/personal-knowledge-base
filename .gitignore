@@ -32,3 +32,4 @@ frontend/dist/
 *.db
 pkb.db
 backend/pkb.db
+backend/uploads/
