@@ -24,10 +24,16 @@ export const askQuestion = async (question: string) => (await api.post('/agent/a
 export const getFolders = async () => (await api.get('/folders', { params: { user_id: getCurrentUser().id } })).data;
 export const createFolder = async (name: string) => (await api.post('/folders', { name }, { params: { user_id: getCurrentUser().id } })).data;
 export const getFolderDocs = async (folderId: string) => (await api.get(`/folders/${folderId}/documents`)).data;
-export const getAllDocs = async () => (await api.get('/documents/all')).data;
-export const getUncategorizedDocs = async () => (await api.get('/documents/uncategorized')).data;
 export const moveDocToFolder = async (folderId: string, docId: string) => (await api.post(`/folders/${folderId}/documents/${docId}`)).data;
 export const toggleDocVisibility = async (docId: string) => (await api.post(`/documents/${docId}/toggle-visibility`, {}, { params: { user_id: getCurrentUser().id } })).data;
+
+// 👇 修复：加上 user_id 参数
+export const getAllDocs = async () => 
+  (await api.get('/documents/all', { params: { user_id: getCurrentUser().id } })).data;
+
+// 👇 修复：加上 user_id 参数
+export const getUncategorizedDocs = async () => 
+  (await api.get('/documents/uncategorized', { params: { user_id: getCurrentUser().id } })).data;
 
 export const getSquareDocs = async (keyword: string = '') => 
   (await api.get('/square', { params: { keyword, user_id: getCurrentUser().id } })).data;
@@ -35,7 +41,6 @@ export const getSquareFolders = async () =>
   (await api.get('/square/folders', { params: { user_id: getCurrentUser().id } })).data;
 export const getUserPublicDocs = async (userId: string) => (await api.get(`/users/${userId}/docs`)).data;
 
-// 收藏功能
 export const toggleFavDoc = async (docId: string) => (await api.post(`/favorites/doc/${docId}`, {}, { params: { user_id: getCurrentUser().id } })).data;
 export const toggleFavFolder = async (folderId: string) => (await api.post(`/favorites/folder/${folderId}`, {}, { params: { user_id: getCurrentUser().id } })).data;
 export const getMyFavorites = async () => (await api.get('/favorites', { params: { user_id: getCurrentUser().id } })).data;
@@ -56,6 +61,5 @@ export const getSquareFolderDocs = async (folderId: string) =>
 export const deleteFolder = async (folderId: string) => 
   (await api.delete(`/folders/${folderId}`, { params: { user_id: getCurrentUser().id } })).data;
 
-// 👇 刚补上的重命名接口
 export const renameFolder = async (folderId: string, newName: string) => 
   (await api.put(`/folders/${folderId}/name`, { new_name: newName }, { params: { user_id: getCurrentUser().id } })).data;
