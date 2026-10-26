@@ -170,8 +170,13 @@ async def toggle_visibility(doc_id: str, user_id: str = Query("u_zhangsan"), db:
 
 # --- 公共广场 ---
 @api_router.get("/square", tags=["manage"])
-async def get_square(keyword: str = Query(""), db: Session = Depends(get_db)):
-    return get_public_documents(db, keyword)
+async def get_square(
+    keyword: str = Query(""), 
+    user_id: str = Query("u_zhangsan"), # 👈 接收前端传的李四 ID
+    db: Session = Depends(get_db)
+):
+    # 👈 必须把 user_id 当作第三个参数传进去！
+    return get_public_documents(db, keyword, user_id)
 
 @api_router.get("/square/folders", tags=["manage"])
 async def square_folders(db: Session = Depends(get_db)):
@@ -208,3 +213,19 @@ async def remove_from_folder(folder_id: str, doc_id: str, db: Session = Depends(
 async def delete_doc(doc_id: str, db: Session = Depends(get_db)):
     """彻底删除文档"""
     return delete_document(db, doc_id)
+
+# 顶部引入加上新函数
+from modules.manage.service.folder_service import (
+    # ... 之前的 ...
+    toggle_folder_public, get_public_docs_in_folder
+)
+
+@api_router.post("/folders/{folder_id}/toggle-public", tags=["manage"])
+async def toggle_folder_visibility(folder_id: str, user_id: str = Query("u_zhangsan"), db: Session = Depends(get_db)):
+    """切换收藏夹的公开/私有状态"""
+    return toggle_folder_public(db, folder_id, user_id)
+
+@api_router.get("/square/folders/{folder_id}/docs", tags=["manage"])
+async def get_square_folder_docs(folder_id: str, db: Session = Depends(get_db)):
+    """获取公共广场中某公开收藏夹的内部文档"""
+    return get_public_docs_in_folder(db, folder_id)
