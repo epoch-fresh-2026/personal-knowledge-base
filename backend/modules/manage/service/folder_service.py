@@ -221,3 +221,32 @@ def get_public_docs_in_folder(db: Session, folder_id: str):
 def get_all_folders(db: Session, user_id: str):
     folders = db.query(Folder).filter(Folder.owner_id == user_id).all()
     return [{"id": f.id, "name": f.name, "is_public": f.is_public} for f in folders]
+
+def delete_folder(db: Session, folder_id: str, user_id: str):
+    folder = db.query(Folder).filter(Folder.id == folder_id, Folder.owner_id == user_id).first()
+    if not folder:
+        return {"error": "文件夹不存在或无权限"}
+    
+    # 1. 解除该文件夹下所有文档的关联（这些文档会变成未分类）
+    db.query(DocumentFolder).filter(DocumentFolder.folder_id == folder_id).delete()
+    
+    # 2. 解除用户对该文件夹的收藏关系（如果有）
+    db.query(FavoriteFolder).filter(FavoriteFolder.folder_id == folder_id).delete()
+    
+    # 3. 删除文件夹本身
+    db.delete(folder)
+    db.commit()
+    
+    return {"status": "success"}
+
+def rename_folder(db: Session, folder_id: str, new_name: str, user_id: str):
+    folder = db.query(Folder).filter(Folder.id == folder_id, Folder.owner_id == user_id).first()
+    if not folder:
+        return {"error": "文件夹不存在或无权限"}
+    
+    if not new_name.strip():
+        return {"error": "文件夹名不能为空"}
+        
+    folder.name = new_name
+    db.commit()
+    return {"status": "success", "name": folder.name}
