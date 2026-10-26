@@ -52,3 +52,25 @@ pip install -r requirements.txt
 cp .env.example .env
 # 启动后端
 uvicorn main:app --reload
+```
+> 后端跑在 `http://localhost:8000`，API 文档见 `http://localhost:8000/docs`。
+
+### 3. 启动前端
+```bash
+cd frontend
+npm install
+npm run dev
+```
+> 前端跑在 `http://localhost:5173`。
+
+## 🗺️ Roadmap（后续演进计划）
+- [ ] **向量检索**：接入 `pgvector`，实现纯向量语义检索与 RRF（倒数排名融合）。
+- [ ] **Agent 深度编排**：引入更成熟的 Agent 框架（如 LangGraph），支持更复杂的多步推理与自动纠错。
+- [ ] **多模态扩展**：支持 OCR 提取图片文字，以及视频 ASR 语音转文字。
+
+## 📚 项目文档与资源
+- [产品需求文档 (Issue #1)](https://github.com/epoch-fresh-2026/personal-knowledge-base/issues/1)
+- [架构设计文档 (Issue #2)](https://github.com/epoch-fresh-2026/personal-knowledge-base/issues/2)
+
+## 📜 License
+This project is licensed under the MIT License.
