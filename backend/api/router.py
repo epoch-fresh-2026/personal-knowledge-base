@@ -18,12 +18,15 @@ from modules.ingest.domain.models import Document, Chunk
 from modules.retrieve.service.search import search
 from modules.agent.service.agent_service import ask_question
 
-# 引入所有 manage 模块的 Service
+# 引入所有 manage 模块的 Service (包含最新的重命名、删除文件夹等)
 from modules.manage.service.folder_service import (
     get_all_folders, create_folder, add_doc_to_folder, get_documents_in_folder, 
     get_all_documents, get_uncategorized_documents, get_public_documents, 
     get_user_public_docs, toggle_doc_visibility,
-    get_public_folders, toggle_favorite_doc, toggle_favorite_folder, get_my_favorites
+    get_public_folders, toggle_favorite_doc, toggle_favorite_folder, get_my_favorites,
+    remove_doc_from_folder, delete_document,
+    toggle_folder_public, get_public_docs_in_folder,
+    delete_folder, rename_folder
 )
 
 api_router = APIRouter()
@@ -36,7 +39,7 @@ async def upload_document(
     is_public: bool = Query(False),
     db: Session = Depends(get_db)
 ):
-    # 1. 物理保存文件
+    # 物理保存文件
     upload_dir = "uploads"
     os.makedirs(upload_dir, exist_ok=True) 
     unique_filename = f"{uuid4()}_{file.filename}"
@@ -45,7 +48,7 @@ async def upload_document(
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
 
-    # 2. 解析文件内容
+    # 解析文件内容
     filename = file.filename.lower()
     content = ""
     source_type = "file"
@@ -70,13 +73,12 @@ async def upload_document(
     if not content.strip():
         content = f"【空文件或无法解析：{file.filename}】"
         
-    # 3. 存入数据库
     doc_id = str(uuid4())
     doc = Document(
         id=doc_id, 
         title=file.filename, 
         source_type=source_type, 
-        source_url=f"/uploads/{unique_filename}", # 保存访问路径
+        source_url=f"/uploads/{unique_filename}",
         is_public=is_public, 
         owner_id=user_id
     )
@@ -86,6 +88,7 @@ async def upload_document(
     
     save_document(db, doc, chunks)
     return {"id": doc_id, "title": doc.title, "chunks_count": len(chunks)}
+
 
 class URLCreate(BaseModel):
     url: str
@@ -128,6 +131,9 @@ async def agent_chat(req: AskRequest, db: Session = Depends(get_db)):
 class FolderCreate(BaseModel):
     name: str
 
+class FolderRename(BaseModel):
+    new_name: str
+
 # --- 文件夹操作 ---
 @api_router.get("/folders", tags=["manage"])
 async def list_folders(user_id: str = Query("u_zhangsan"), db: Session = Depends(get_db)):
@@ -137,6 +143,16 @@ async def list_folders(user_id: str = Query("u_zhangsan"), db: Session = Depends
 async def add_folder(req: FolderCreate, user_id: str = Query("u_zhangsan"), db: Session = Depends(get_db)):
     return create_folder(db, req.name, user_id)
 
+# 👇 新增：重命名收藏夹
+@api_router.put("/folders/{folder_id}/name", tags=["manage"])
+async def rename_existing_folder(folder_id: str, req: FolderRename, user_id: str = Query("u_zhangsan"), db: Session = Depends(get_db)):
+    return rename_folder(db, folder_id, req.new_name, user_id)
+
+# 👇 新增：删除收藏夹
+@api_router.delete("/folders/{folder_id}", tags=["manage"])
+async def delete_existing_folder(folder_id: str, user_id: str = Query("u_zhangsan"), db: Session = Depends(get_db)):
+    return delete_folder(db, folder_id, user_id)
+
 @api_router.get("/folders/{folder_id}/documents", tags=["manage"])
 async def list_folder_docs(folder_id: str, db: Session = Depends(get_db)):
     return get_documents_in_folder(db, folder_id)
@@ -144,6 +160,14 @@ async def list_folder_docs(folder_id: str, db: Session = Depends(get_db)):
 @api_router.post("/folders/{folder_id}/documents/{doc_id}", tags=["manage"])
 async def move_doc(folder_id: str, doc_id: str, db: Session = Depends(get_db)):
     return add_doc_to_folder(db, doc_id, folder_id)
+
+@api_router.delete("/folders/{folder_id}/documents/{doc_id}", tags=["manage"])
+async def remove_from_folder(folder_id: str, doc_id: str, db: Session = Depends(get_db)):
+    return remove_doc_from_folder(db, doc_id, folder_id)
+
+@api_router.post("/folders/{folder_id}/toggle-public", tags=["manage"])
+async def toggle_folder_visibility(folder_id: str, user_id: str = Query("u_zhangsan"), db: Session = Depends(get_db)):
+    return toggle_folder_public(db, folder_id, user_id)
 
 # --- 文档列表 ---
 @api_router.get("/documents/all", tags=["manage"])
@@ -168,19 +192,27 @@ async def get_document_content(doc_id: str, db: Session = Depends(get_db)):
 async def toggle_visibility(doc_id: str, user_id: str = Query("u_zhangsan"), db: Session = Depends(get_db)):
     return toggle_doc_visibility(db, doc_id, user_id)
 
+# --- 彻底删除文档 ---
+@api_router.delete("/documents/{doc_id}", tags=["manage"])
+async def delete_doc(doc_id: str, db: Session = Depends(get_db)):
+    return delete_document(db, doc_id)
+
 # --- 公共广场 ---
 @api_router.get("/square", tags=["manage"])
 async def get_square(
     keyword: str = Query(""), 
-    user_id: str = Query("u_zhangsan"), # 👈 接收前端传的李四 ID
+    user_id: str = Query("u_zhangsan"), 
     db: Session = Depends(get_db)
 ):
-    # 👈 必须把 user_id 当作第三个参数传进去！
     return get_public_documents(db, keyword, user_id)
 
 @api_router.get("/square/folders", tags=["manage"])
-async def square_folders(db: Session = Depends(get_db)):
-    return get_public_folders(db)
+async def square_folders(user_id: str = Query("u_zhangsan"), db: Session = Depends(get_db)):
+    return get_public_folders(db, user_id)
+
+@api_router.get("/square/folders/{folder_id}/docs", tags=["manage"])
+async def get_square_folder_docs(folder_id: str, db: Session = Depends(get_db)):
+    return get_public_docs_in_folder(db, folder_id)
 
 @api_router.get("/users/{user_id}/docs", tags=["manage"])
 async def user_profile(user_id: str, db: Session = Depends(get_db)):
@@ -198,34 +230,3 @@ async def fav_folder(folder_id: str, user_id: str = Query("u_zhangsan"), db: Ses
 @api_router.get("/favorites", tags=["manage"])
 async def my_favorites(user_id: str = Query("u_zhangsan"), db: Session = Depends(get_db)):
     return get_my_favorites(db, user_id)
-
-from modules.manage.service.folder_service import (
-    # ... 之前的引入保留 ...
-    remove_doc_from_folder, delete_document # 👈 新增
-)
-
-@api_router.delete("/folders/{folder_id}/documents/{doc_id}", tags=["manage"])
-async def remove_from_folder(folder_id: str, doc_id: str, db: Session = Depends(get_db)):
-    """从收藏夹移出文档"""
-    return remove_doc_from_folder(db, doc_id, folder_id)
-
-@api_router.delete("/documents/{doc_id}", tags=["manage"])
-async def delete_doc(doc_id: str, db: Session = Depends(get_db)):
-    """彻底删除文档"""
-    return delete_document(db, doc_id)
-
-# 顶部引入加上新函数
-from modules.manage.service.folder_service import (
-    # ... 之前的 ...
-    toggle_folder_public, get_public_docs_in_folder
-)
-
-@api_router.post("/folders/{folder_id}/toggle-public", tags=["manage"])
-async def toggle_folder_visibility(folder_id: str, user_id: str = Query("u_zhangsan"), db: Session = Depends(get_db)):
-    """切换收藏夹的公开/私有状态"""
-    return toggle_folder_public(db, folder_id, user_id)
-
-@api_router.get("/square/folders/{folder_id}/docs", tags=["manage"])
-async def get_square_folder_docs(folder_id: str, db: Session = Depends(get_db)):
-    """获取公共广场中某公开收藏夹的内部文档"""
-    return get_public_docs_in_folder(db, folder_id)

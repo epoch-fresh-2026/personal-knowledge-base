@@ -52,3 +52,10 @@ export const toggleFolderPublic = async (folderId: string) =>
 
 export const getSquareFolderDocs = async (folderId: string) => 
   (await api.get(`/square/folders/${folderId}/docs`)).data;
+
+export const deleteFolder = async (folderId: string) => 
+  (await api.delete(`/folders/${folderId}`, { params: { user_id: getCurrentUser().id } })).data;
+
+// 👇 刚补上的重命名接口
+export const renameFolder = async (folderId: string, newName: string) => 
+  (await api.put(`/folders/${folderId}/name`, { new_name: newName }, { params: { user_id: getCurrentUser().id } })).data;
