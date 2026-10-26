@@ -59,22 +59,40 @@ def get_uncategorized_documents(db: Session):
         "owner_id": d.owner_id
     } for d in docs]
 
-def get_public_documents(db: Session, keyword: str = ""):
+def get_public_documents(db: Session, keyword: str = "", user_id: str = ""):
     query = db.query(Document).filter(Document.is_public == True)
     if keyword:
         query = query.join(User, Document.owner_id == User.id, isouter=True).filter(
             (Document.title.like(f"%{keyword}%")) | (User.nickname.like(f"%{keyword}%"))
         )
     docs = query.all()
+    
+    # 👇 这里一定要把 user_id 传进去查！如果 user_id 是空的，就查不到收藏记录
+    fav_doc_ids = [f.document_id for f in db.query(FavoriteDocument).filter(FavoriteDocument.user_id == user_id).all()] if user_id else []
+    
     return [{
         "id": d.id, 
         "title": d.title, 
         "source_type": d.source_type, 
-        "source_url": d.source_url, # 👈 这里也加上，方便广场里也能预览
+        "source_url": d.source_url,
         "author_name": d.owner.nickname if d.owner else "未知", 
         "author_avatar": d.owner.avatar if d.owner else "👤", 
-        "author_id": d.owner_id if d.owner_id else "unknown"
+        "author_id": d.owner_id if d.owner_id else "unknown",
+        "is_favorited": d.id in fav_doc_ids # 👈 核心：判断当前文档ID是否在收藏列表里
     } for d in docs]
+
+def get_public_folders(db: Session, user_id: str = ""):
+    folders = db.query(Folder).filter(Folder.is_public == True).all()
+    
+    # 👇 必须查当前用户的收藏记录
+    fav_folder_ids = [f.folder_id for f in db.query(FavoriteFolder).filter(FavoriteFolder.user_id == user_id).all()] if user_id else []
+    
+    return [{
+        "id": f.id, 
+        "name": f.name, 
+        "owner_name": f.owner.nickname if f.owner else "未知",
+        "is_favorited": f.id in fav_folder_ids # 👈 必须返回这个
+    } for f in folders]
 
 def get_user_public_docs(db: Session, user_id: str):
     docs = db.query(Document).filter(Document.is_public == True, Document.owner_id == user_id).all()
@@ -89,11 +107,8 @@ def toggle_doc_visibility(db: Session, doc_id: str, user_id: str):
         return {"status": "success", "is_public": doc.is_public}
     return {"error": "not found"}
 
-def get_public_folders(db: Session):
-    folders = db.query(Folder).filter(Folder.is_public == True).all()
-    return [{"id": f.id, "name": f.name, "owner_name": f.owner.nickname if f.owner else "未知"} for f in folders]
-
 def toggle_favorite_doc(db: Session, user_id: str, doc_id: str):
+    # 插入记录时，确保 user_id 是李四
     fav = db.query(FavoriteDocument).filter_by(user_id=user_id, document_id=doc_id).first()
     if fav:
         db.delete(fav)
@@ -105,6 +120,11 @@ def toggle_favorite_doc(db: Session, user_id: str, doc_id: str):
         return {"status": "added"}
 
 def toggle_favorite_folder(db: Session, user_id: str, folder_id: str):
+    # 👇 新增：先检查文件夹是否存在
+    folder = db.query(Folder).filter(Folder.id == folder_id).first()
+    if not folder:
+        return {"error": "文件夹不存在"}
+
     fav = db.query(FavoriteFolder).filter_by(user_id=user_id, folder_id=folder_id).first()
     if fav:
         db.delete(fav)
@@ -164,3 +184,40 @@ def delete_document(db: Session, doc_id: str):
     db.commit()
     
     return {"status": "success"}
+
+# 👇 新增：切换收藏夹的公开状态
+def toggle_folder_public(db: Session, folder_id: str, user_id: str):
+    folder = db.query(Folder).filter(Folder.id == folder_id, Folder.owner_id == user_id).first()
+    if not folder:
+        return {"error": "文件夹不存在或无权限"}
+    
+    # 1. 切换文件夹状态
+    folder.is_public = not folder.is_public
+    
+    # 2. 如果文件夹变成了【公开】，则级联把里面的所有文档都设为【公开】
+    if folder.is_public:
+        docs = db.query(Document).join(DocumentFolder, Document.id == DocumentFolder.document_id).filter(DocumentFolder.folder_id == folder_id).all()
+        for doc in docs:
+            doc.is_public = True
+            
+    db.commit()
+    return {"status": "success", "is_public": folder.is_public}
+
+# 👇 新增：获取某个公开收藏夹里的公开文档（供广场使用）
+def get_public_docs_in_folder(db: Session, folder_id: str):
+    docs = db.query(Document).join(DocumentFolder, Document.id == DocumentFolder.document_id).filter(
+        DocumentFolder.folder_id == folder_id,
+        Document.is_public == True
+    ).all()
+    # 👇 补充返回 source_type 和 source_url
+    return [{
+        "id": d.id, 
+        "title": d.title, 
+        "source_type": d.source_type, 
+        "source_url": d.source_url 
+    } for d in docs]
+
+# 👇 修改：让获取个人文件夹的接口带上 is_public
+def get_all_folders(db: Session, user_id: str):
+    folders = db.query(Folder).filter(Folder.owner_id == user_id).all()
+    return [{"id": f.id, "name": f.name, "is_public": f.is_public} for f in folders]

@@ -29,8 +29,10 @@ export const getUncategorizedDocs = async () => (await api.get('/documents/uncat
 export const moveDocToFolder = async (folderId: string, docId: string) => (await api.post(`/folders/${folderId}/documents/${docId}`)).data;
 export const toggleDocVisibility = async (docId: string) => (await api.post(`/documents/${docId}/toggle-visibility`, {}, { params: { user_id: getCurrentUser().id } })).data;
 
-export const getSquareDocs = async (keyword: string = '') => (await api.get('/square', { params: { keyword } })).data;
-export const getSquareFolders = async () => (await api.get('/square/folders')).data;
+export const getSquareDocs = async (keyword: string = '') => 
+  (await api.get('/square', { params: { keyword, user_id: getCurrentUser().id } })).data;
+export const getSquareFolders = async () => 
+  (await api.get('/square/folders', { params: { user_id: getCurrentUser().id } })).data;
 export const getUserPublicDocs = async (userId: string) => (await api.get(`/users/${userId}/docs`)).data;
 
 // 收藏功能
@@ -44,3 +46,9 @@ export const removeDocFromFolder = async (folderId: string, docId: string) =>
 
 export const deleteDoc = async (docId: string) => 
   (await api.delete(`/documents/${docId}`)).data;
+
+export const toggleFolderPublic = async (folderId: string) => 
+  (await api.post(`/folders/${folderId}/toggle-public`, {}, { params: { user_id: getCurrentUser().id } })).data;
+
+export const getSquareFolderDocs = async (folderId: string) => 
+  (await api.get(`/square/folders/${folderId}/docs`)).data;
