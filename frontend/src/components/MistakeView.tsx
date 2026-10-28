@@ -71,6 +71,78 @@ function MistakeView() {
   }
 };
 
+const handleEdit = async (item: Mistake) => {
+  const updatedQuestion = window.prompt('修改题目内容：', item.question);
+  if (updatedQuestion === null) return;
+
+  if (!updatedQuestion.trim()) {
+    setMessage('题目内容不能为空。');
+    return;
+  }
+
+  const correctAnswer = window.prompt('修改正确答案：', item.correct_answer);
+  if (correctAnswer === null) return;
+
+  const wrongAnswer = window.prompt('修改错误答案：', item.wrong_answer);
+  if (wrongAnswer === null) return;
+
+  const errorReason = window.prompt('修改错误原因：', item.error_reason);
+  if (errorReason === null) return;
+
+  const knowledgePoints = window.prompt('修改关联知识点：', item.knowledge_points);
+  if (knowledgePoints === null) return;
+
+  try {
+    const response = await fetch(
+      `${API_BASE}/mistakes/${encodeURIComponent(item.id)}?user_id=${encodeURIComponent(userId)}`,
+      {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          question: updatedQuestion.trim(),
+          correct_answer: correctAnswer,
+          wrong_answer: wrongAnswer,
+          error_reason: errorReason,
+          knowledge_points: knowledgePoints,
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error('编辑失败');
+    }
+
+    setMessage('错题修改成功！');
+    await loadMistakes();
+  } catch {
+    setMessage('编辑失败，请检查后端服务。');
+  }
+};
+
+const handleDelete = async (item: Mistake) => {
+  const confirmed = window.confirm(
+    `确定要删除这道错题吗？\n\n${item.question}`
+  );
+
+  if (!confirmed) return;
+
+  try {
+    const response = await fetch(
+      `${API_BASE}/mistakes/${encodeURIComponent(item.id)}?user_id=${encodeURIComponent(userId)}`,
+      { method: 'DELETE' }
+    );
+
+    if (!response.ok) {
+      throw new Error('删除失败');
+    }
+
+    setMessage('错题删除成功！');
+    await loadMistakes();
+  } catch {
+    setMessage('删除失败，请检查后端服务。');
+  }
+};
+
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
@@ -221,7 +293,30 @@ function MistakeView() {
                 <strong>状态：</strong>
                 {item.status === 'unreviewed' ? '待复习' : '已复习'}
               </p>
-              {item.status === 'unreviewed' && (<button type="button" onClick={() => void handleReview(item.id)}>标记为已复习</button>)}
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+  {item.status === 'unreviewed' && (
+    <button
+      type="button"
+      onClick={() => void handleReview(item.id)}
+    >
+      标记为已复习
+    </button>
+  )}
+
+  <button
+    type="button"
+    onClick={() => void handleEdit(item)}
+  >
+    编辑错题
+  </button>
+
+  <button
+    type="button"
+    onClick={() => void handleDelete(item)}
+  >
+    删除错题
+  </button>
+</div>
             </article>
           ))}
         </div>
