@@ -30,6 +30,10 @@ from modules.manage.service.folder_service import (
 
 api_router = APIRouter()
 
+from modules.mistake.controller.router import router as mistake_router
+
+api_router.include_router(mistake_router)
+
 # ==================== 1. 知识收录 (ingest) ====================
 @api_router.post("/documents/upload", tags=["ingest"])
 async def upload_document(
