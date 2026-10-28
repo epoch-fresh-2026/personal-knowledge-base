@@ -141,7 +141,6 @@ export default function FolderView() {
 
   const filteredFolders = folders.filter(f => f.name.includes(searchFolder));
   const filteredDocs = docs.filter(d => d.title.toLowerCase().includes(searchDocKeyword.toLowerCase()));
-  const canArchiveHere = selectedFolder === null || selectedFolder === 'uncategorized';
 
   return (
     <div>
