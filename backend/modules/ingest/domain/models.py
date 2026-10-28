@@ -37,3 +37,21 @@ class Chunk(Base):
     chunk_index = Column(Integer, nullable=False)
 
     document = relationship("Document", back_populates="chunks")
+
+class Mistake(Base):
+    __tablename__ = "mistakes"
+
+    id = Column(String, primary_key=True)
+    user_id = Column(String, ForeignKey("users.id"), nullable=False)
+
+    question = Column(Text, nullable=False)
+    correct_answer = Column(Text, nullable=True)
+    wrong_answer = Column(Text, nullable=True)
+    error_reason = Column(Text, nullable=True)
+    knowledge_points = Column(Text, nullable=True)
+
+    status = Column(String, default="unreviewed", nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    owner = relationship("User")

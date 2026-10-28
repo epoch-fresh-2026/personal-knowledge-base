@@ -30,6 +30,7 @@ def init_db():
     """建表：导入所有模型后调用 create_all"""
     from modules.ingest.domain import models
     from modules.manage.domain import models as manage_models
+    from modules.ingest.domain.models import Mistake
     Base.metadata.create_all(bind=engine)
     
     # 👇 新增：初始化几个虚拟用户，方便测试社交功能

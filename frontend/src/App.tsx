@@ -6,9 +6,10 @@ import SquareView from './components/SquareView';
 import UserProfileView from './components/UserProfileView';
 import FavoriteView from './components/FavoriteView'; // 👈 确保引入了
 import { getCurrentUser } from './api';
+import MistakeView from './components/MistakeView';
 
 function App() {
-  const [activeTab, setActiveTab] = useState<'chat' | 'upload' | 'folder' | 'square' | 'profile' | 'favorite'>('chat');
+  const [activeTab, setActiveTab] = useState<'chat' | 'upload' | 'folder' | 'square' | 'profile' | 'favorite' | 'mistake'>('chat');
   const [currentUser, setCurrentUser] = useState(getCurrentUser());
   const [viewingUserId, setViewingUserId] = useState(''); 
 
@@ -32,7 +33,7 @@ function App() {
         
         {/* 👇 确保这里有我的收藏 */}
         <div className={`nav-item ${activeTab === 'favorite' ? 'active' : ''}`} onClick={() => setActiveTab('favorite')}>⭐️ 我的收藏</div>
-        
+        <div className={`nav-item ${activeTab === 'mistake' ? 'active' : ''}`}onClick={() => setActiveTab('mistake')}>📝 错题管理</div>
         <div className={`nav-item ${activeTab === 'square' ? 'active' : ''}`} onClick={() => setActiveTab('square')}>🌐 公共广场</div>
 
         <div style={{ marginTop: 'auto', padding: '15px', borderTop: '1px solid #eee' }}>
@@ -53,7 +54,7 @@ function App() {
         
         {/* 👇 确保这里有我的收藏渲染 */}
         {activeTab === 'favorite' && <FavoriteView />}
-        
+        {activeTab === 'mistake' && <MistakeView />}
         {activeTab === 'square' && (
           <SquareView onViewUser={(uid) => { setViewingUserId(uid); setActiveTab('profile'); }} />
         )}
