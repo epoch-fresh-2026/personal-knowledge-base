@@ -49,6 +49,28 @@ function MistakeView() {
     void loadMistakes();
   }, [userId]);
 
+  const handleReview = async (mistakeId: string) => {
+  try {
+    const response = await fetch(
+      `${API_BASE}/mistakes/${encodeURIComponent(mistakeId)}/status?user_id=${encodeURIComponent(userId)}`,
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'reviewed' }),
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error('更新复习状态失败');
+    }
+
+    setMessage('复习状态更新成功');
+    await loadMistakes();
+  } catch {
+    setMessage('复习状态更新失败，请检查后端服务');
+  }
+};
+
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
@@ -195,7 +217,11 @@ function MistakeView() {
               <p><strong>错误答案：</strong>{item.wrong_answer || '未填写'}</p>
               <p><strong>错误原因：</strong>{item.error_reason || '未填写'}</p>
               <p><strong>知识点：</strong>{item.knowledge_points || '未填写'}</p>
-              <p><strong>状态：</strong>{item.status === 'unreviewed' ? '待复习' : item.status}</p>
+              <p>
+                <strong>状态：</strong>
+                {item.status === 'unreviewed' ? '待复习' : '已复习'}
+              </p>
+              {item.status === 'unreviewed' && (<button type="button" onClick={() => void handleReview(item.id)}>标记为已复习</button>)}
             </article>
           ))}
         </div>

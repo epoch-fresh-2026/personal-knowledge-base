@@ -66,3 +66,39 @@ def list_mistakes(
         }
         for item in mistakes
     ]
+
+class MistakeStatusUpdate(BaseModel):
+    status: str
+
+
+@router.patch("/{mistake_id}/status")
+def update_mistake_status(
+    mistake_id: str,
+    req: MistakeStatusUpdate,
+    user_id: str = Query("u_zhangsan"),
+    db: Session = Depends(get_db),
+):
+    if req.status not in ("unreviewed", "reviewed"):
+        return {"message": "无效的复习状态"}
+
+    mistake = (
+        db.query(Mistake)
+        .filter(
+            Mistake.id == mistake_id,
+            Mistake.user_id == user_id,
+        )
+        .first()
+    )
+
+    if mistake is None:
+        return {"message": "未找到错题"}
+
+    mistake.status = req.status
+    db.commit()
+    db.refresh(mistake)
+
+    return {
+        "id": mistake.id,
+        "status": mistake.status,
+        "message": "复习状态更新成功",
+    }
