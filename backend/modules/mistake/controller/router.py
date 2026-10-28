@@ -17,6 +17,12 @@ class MistakeCreate(BaseModel):
     error_reason: str = ""
     knowledge_points: str = ""
 
+class MistakeUpdate(BaseModel):
+    question: str
+    correct_answer: str = ""
+    wrong_answer: str = ""
+    error_reason: str = ""
+    knowledge_points: str = ""
 
 @router.post("")
 def create_mistake(
@@ -101,4 +107,64 @@ def update_mistake_status(
         "id": mistake.id,
         "status": mistake.status,
         "message": "复习状态更新成功",
+    }
+
+@router.put("/{mistake_id}")
+def update_mistake(
+    mistake_id: str,
+    req: MistakeUpdate,
+    user_id: str = Query("u_zhangsan"),
+    db: Session = Depends(get_db),
+):
+    mistake = (
+        db.query(Mistake)
+        .filter(
+            Mistake.id == mistake_id,
+            Mistake.user_id == user_id,
+        )
+        .first()
+    )
+
+    if mistake is None:
+        return {"message": "未找到错题"}
+
+    mistake.question = req.question
+    mistake.correct_answer = req.correct_answer
+    mistake.wrong_answer = req.wrong_answer
+    mistake.error_reason = req.error_reason
+    mistake.knowledge_points = req.knowledge_points
+
+    db.commit()
+    db.refresh(mistake)
+
+    return {
+        "id": mistake.id,
+        "message": "错题更新成功",
+    }
+
+
+@router.delete("/{mistake_id}")
+def delete_mistake(
+    mistake_id: str,
+    user_id: str = Query("u_zhangsan"),
+    db: Session = Depends(get_db),
+):
+    mistake = (
+        db.query(Mistake)
+        .filter(
+            Mistake.id == mistake_id,
+            Mistake.user_id == user_id,
+        )
+        .first()
+    )
+
+    if mistake is None:
+        return {"message": "未找到错题"}
+
+    db.delete(mistake)
+    db.commit()
+
+    return {
+        "id": mistake_id,
+        "message": "错题删除成功",
     }
