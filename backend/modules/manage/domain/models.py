@@ -21,3 +21,26 @@ class FavoriteFolder(Base):
     __tablename__ = "favorite_folders"
     user_id = Column(String, ForeignKey("users.id"), primary_key=True)
     folder_id = Column(String, ForeignKey("folders.id"), primary_key=True)
+
+class Tag(Base):
+    __tablename__ = "tags"
+
+    id = Column(String, primary_key=True)
+    name = Column(String, nullable=False, unique=True)
+    pinned = Column(Boolean, default=False, nullable=False)
+
+
+class DocumentTag(Base):
+    __tablename__ = "document_tags"
+
+    document_id = Column(
+        String,
+        ForeignKey("documents.id"),
+        primary_key=True
+    )
+
+    tag_id = Column(
+        String,
+        ForeignKey("tags.id"),
+        primary_key=True
+    )

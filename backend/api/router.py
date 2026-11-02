@@ -17,6 +17,19 @@ from modules.ingest.repository.document_repo import save_document
 from modules.ingest.domain.models import Document, Chunk
 from modules.retrieve.service.search import search
 from modules.agent.service.agent_service import ask_question
+from modules.manage.service.document_service import (
+    list_documents,
+    update_document_meta
+)
+from modules.manage.service.tag_service import (
+    create_tag,
+    get_all_tags,
+    delete_tag,
+    pin_tag,
+    add_tag_to_doc,
+    remove_tag_from_doc,
+    list_documents_by_tag
+)
 
 from modules.manage.service.folder_service import (
     get_all_folders, create_folder, add_doc_to_folder, get_documents_in_folder, 
@@ -122,7 +135,119 @@ class AskRequest(BaseModel):
 async def agent_chat(req: AskRequest, db: Session = Depends(get_db)):
     return await ask_question(db, req.question, req.top_k)
 
+# ==================== 标签管理 (tags) ====================
+
+class TagCreate(BaseModel):
+    name: str
+
+class DocumentUpdate(BaseModel):
+    title: str | None = None
+    is_public: bool | None = None
+    content: str | None = None
+
+@api_router.get("/tags", tags=["manage"])
+async def list_tags(db: Session = Depends(get_db)):
+    return get_all_tags(db)
+
+
+@api_router.post("/tags", tags=["manage"])
+async def add_tag(req: TagCreate, db: Session = Depends(get_db)):
+    try:
+        return create_tag(db, req.name)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@api_router.delete("/tags/{tag_id}", tags=["manage"])
+async def remove_tag(tag_id: str, db: Session = Depends(get_db)):
+    try:
+        return delete_tag(db, tag_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@api_router.post("/tags/{tag_id}/pin", tags=["manage"])
+async def toggle_tag_pin(tag_id: str, db: Session = Depends(get_db)):
+    try:
+        return pin_tag(db, tag_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@api_router.post(
+    "/documents/{doc_id}/tags/{tag_id}",
+    tags=["manage"]
+)
+async def add_document_tag(
+    doc_id: str,
+    tag_id: str,
+    db: Session = Depends(get_db)
+):
+    try:
+        return add_tag_to_doc(db, doc_id, tag_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@api_router.delete(
+    "/documents/{doc_id}/tags/{tag_id}",
+    tags=["manage"]
+)
+async def remove_document_tag(
+    doc_id: str,
+    tag_id: str,
+    db: Session = Depends(get_db)
+):
+    try:
+        return remove_tag_from_doc(db, doc_id, tag_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@api_router.get("/tags/{tag_name}/documents", tags=["manage"])
+async def get_tag_documents(
+    tag_name: str,
+    db: Session = Depends(get_db)
+):
+    try:
+        return list_documents_by_tag(db, tag_name)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
 # ==================== 3. 管理模块 (manage) ====================
+@api_router.get("/documents/filter", tags=["manage"])
+async def filter_documents(
+    owner_id: str | None = Query(None),
+    keyword: str | None = Query(None),
+    source_type: str | None = Query(None),
+    is_public: bool | None = Query(None),
+    db: Session = Depends(get_db)
+):
+    filters = {
+        "owner_id": owner_id,
+        "keyword": keyword,
+        "source_type": source_type,
+        "is_public": is_public
+    }
+
+    return list_documents(db, filters)
+
+
+@api_router.put("/documents/{doc_id}/meta", tags=["manage"])
+async def update_doc_meta(
+    doc_id: str,
+    req: DocumentUpdate,
+    db: Session = Depends(get_db)
+):
+    try:
+        return update_document_meta(
+            db,
+            doc_id,
+            **req.dict(exclude_unset=True)
+        )
+    except ValueError as e:
+        status_code = 404 if str(e) == "文档不存在" else 400
+        raise HTTPException(status_code=status_code, detail=str(e))
 class FolderCreate(BaseModel):
     name: str
 class FolderRename(BaseModel):

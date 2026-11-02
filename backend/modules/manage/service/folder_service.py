@@ -1,5 +1,10 @@
 from sqlalchemy.orm import Session
-from modules.manage.domain.models import Folder, DocumentFolder, FavoriteFolder
+from modules.manage.domain.models import (
+    Folder,
+    DocumentFolder,
+    FavoriteFolder,
+    DocumentTag
+)
 from modules.ingest.domain.models import Document, User, FavoriteDocument
 from uuid import uuid4
 from sqlalchemy import select # 👈 确保顶部导入了 select
@@ -33,9 +38,11 @@ def remove_doc_from_folder(db: Session, doc_id: str, folder_id: str):
 
 def delete_document(db: Session, doc_id: str):
     doc = db.query(Document).filter(Document.id == doc_id).first()
+
     if not doc:
         return {"error": "文档不存在"}
 
+    # 删除上传的物理文件
     if doc.source_url and doc.source_url.startswith("/uploads/"):
         file_path = doc.source_url.replace("/uploads/", "uploads/", 1)
         if os.path.exists(file_path):
@@ -44,10 +51,25 @@ def delete_document(db: Session, doc_id: str):
             except Exception as e:
                 print(f"物理文件删除失败: {e}")
 
-    db.query(DocumentFolder).filter(DocumentFolder.document_id == doc_id).delete()
-    db.query(FavoriteDocument).filter(FavoriteDocument.document_id == doc_id).delete()
+    # 清理文档关联
+    db.query(DocumentFolder).filter(
+        DocumentFolder.document_id == doc_id
+    ).delete(synchronize_session=False)
+
+    # 清理收藏记录
+    db.query(FavoriteDocument).filter(
+        FavoriteDocument.document_id == doc_id
+    ).delete(synchronize_session=False)
+
+    # 清理标签关联
+    db.query(DocumentTag).filter(
+        DocumentTag.document_id == doc_id
+    ).delete(synchronize_session=False)
+
+    # 删除文档（其关联的 chunks 由 ORM 级联删除）
     db.delete(doc)
     db.commit()
+
     return {"status": "success"}
 
 def get_documents_in_folder(db: Session, folder_id: str):
