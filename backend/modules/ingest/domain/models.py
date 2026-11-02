@@ -50,8 +50,18 @@ class Mistake(Base):
     error_reason = Column(Text, nullable=True)
     knowledge_points = Column(Text, nullable=True)
 
-    status = Column(String, default="unreviewed", nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    # 复习状态：pending、reviewing、mastered
+    status = Column(String, default="pending", nullable=False)
 
-    owner = relationship("User")
+    # 累计复习次数
+    review_count = Column(Integer, default=0, nullable=False)
+
+    # 最近一次复习时间
+    last_reviewed_at = Column(DateTime, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow
+    )

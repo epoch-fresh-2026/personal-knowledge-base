@@ -1,4 +1,5 @@
 from uuid import uuid4
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
@@ -24,6 +25,9 @@ class MistakeUpdate(BaseModel):
     error_reason: str = ""
     knowledge_points: str = ""
 
+class MistakeReviewComplete(BaseModel):
+    status: str = "reviewing"
+
 @router.post("")
 def create_mistake(
     req: MistakeCreate,
@@ -38,7 +42,9 @@ def create_mistake(
         wrong_answer=req.wrong_answer,
         error_reason=req.error_reason,
         knowledge_points=req.knowledge_points,
-        status="unreviewed",
+        status="pending",
+        review_count=0,
+        last_reviewed_at=None,
     )
     db.add(mistake)
     db.commit()
@@ -50,11 +56,20 @@ def create_mistake(
 @router.get("")
 def list_mistakes(
     user_id: str = Query("u_zhangsan"),
+    status: str = Query(None),
     db: Session = Depends(get_db),
 ):
+    mistakes_query = db.query(Mistake).filter(
+        Mistake.user_id == user_id
+    )
+
+    if status:
+        if status not in ("pending", "reviewing", "mastered"):
+            return {"message": "无效的复习状态"}
+        mistakes_query = mistakes_query.filter(Mistake.status == status)
+
     mistakes = (
-        db.query(Mistake)
-        .filter(Mistake.user_id == user_id)
+        mistakes_query
         .order_by(Mistake.created_at.desc())
         .all()
     )
@@ -68,6 +83,11 @@ def list_mistakes(
             "error_reason": item.error_reason,
             "knowledge_points": item.knowledge_points,
             "status": item.status,
+            "review_count": item.review_count,
+            "last_reviewed_at": (
+                item.last_reviewed_at.isoformat()
+                if item.last_reviewed_at else None
+            ),
             "created_at": item.created_at.isoformat() if item.created_at else None,
         }
         for item in mistakes
@@ -84,7 +104,7 @@ def update_mistake_status(
     user_id: str = Query("u_zhangsan"),
     db: Session = Depends(get_db),
 ):
-    if req.status not in ("unreviewed", "reviewed"):
+    if req.status not in ("pending", "reviewing", "mastered"):
         return {"message": "无效的复习状态"}
 
     mistake = (
@@ -107,6 +127,46 @@ def update_mistake_status(
         "id": mistake.id,
         "status": mistake.status,
         "message": "复习状态更新成功",
+    }
+
+@router.post("/{mistake_id}/review")
+def complete_mistake_review(
+    mistake_id: str,
+    req: MistakeReviewComplete,
+    user_id: str = Query("u_zhangsan"),
+    db: Session = Depends(get_db),
+):
+    if req.status not in ("pending", "reviewing", "mastered"):
+        return {"message": "无效的复习状态"}
+
+    mistake = (
+        db.query(Mistake)
+        .filter(
+            Mistake.id == mistake_id,
+            Mistake.user_id == user_id,
+        )
+        .first()
+    )
+
+    if mistake is None:
+        return {"message": "未找到错题"}
+
+    mistake.status = req.status
+    mistake.review_count = (mistake.review_count or 0) + 1
+    mistake.last_reviewed_at = datetime.utcnow()
+
+    db.commit()
+    db.refresh(mistake)
+
+    return {
+        "id": mistake.id,
+        "status": mistake.status,
+        "review_count": mistake.review_count,
+        "last_reviewed_at": (
+            mistake.last_reviewed_at.isoformat()
+            if mistake.last_reviewed_at else None
+        ),
+        "message": "复习记录成功",
     }
 
 @router.put("/{mistake_id}")
