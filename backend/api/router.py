@@ -16,7 +16,7 @@ from modules.ingest.service.splitter import split_markdown
 from modules.ingest.repository.document_repo import save_document
 from modules.ingest.domain.models import Document, Chunk
 from modules.retrieve.service.search import search
-from modules.agent.service.agent_service import ask_question
+from modules.agent.service.agent_service import agent_chat as run_agent
 from modules.manage.service.document_service import (
     list_documents,
     update_document_meta
@@ -132,8 +132,23 @@ class AskRequest(BaseModel):
     top_k: int = 3
 
 @api_router.post("/agent/ask", tags=["agent"])
-async def agent_chat(req: AskRequest, db: Session = Depends(get_db)):
-    return await ask_question(db, req.question, req.top_k)
+async def agent_chat_endpoint(
+    req: AskRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Agent 智能问答入口。
+    API 层负责提供检索接口，Agent 不直接接触数据库。
+    """
+
+    def retrieve_adapter(query: str, requested_top_k: int) -> dict:
+        return search(db, query, top_k=requested_top_k)
+
+    return await run_agent(
+        req.question,
+        req.top_k,
+        retrieve_adapter
+    )
 
 # ==================== 标签管理 (tags) ====================
 
