@@ -63,3 +63,34 @@ export const deleteFolder = async (folderId: string) =>
 
 export const renameFolder = async (folderId: string, newName: string) => 
   (await api.put(`/folders/${folderId}/name`, { new_name: newName }, { params: { user_id: getCurrentUser().id } })).data;
+
+// ==================== 薄弱知识点分析 ====================
+
+export interface KnowledgePointItem {
+  knowledge_point: string;
+  total_mistakes: number;
+  pending_count: number;
+  reviewing_count: number;
+  mastered_count: number;
+  review_count: number;
+  unmastered_count: number;
+  weak_rate: number;
+  status: 'weak' | 'mastered';
+}
+
+export interface KnowledgePointStatistics {
+  user_id: string;
+  total_knowledge_points: number;
+  weak_knowledge_points: number;
+  items: KnowledgePointItem[];
+}
+
+// 获取当前用户的知识点统计
+export const getKnowledgePointStatistics = async (
+  userId: string = getCurrentUser().id
+): Promise<KnowledgePointStatistics> =>
+  (
+    await api.get('/mistakes/knowledge-points', {
+      params: { user_id: userId },
+    })
+  ).data;
