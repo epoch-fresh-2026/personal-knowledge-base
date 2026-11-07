@@ -94,3 +94,55 @@ export const getKnowledgePointStatistics = async (
       params: { user_id: userId },
     })
   ).data;
+
+// ==================== 个性化智能复习建议 ====================
+
+export interface ReviewRecommendationItem {
+  mistake_id: string;
+  question: string;
+  knowledge_points: string[];
+  status: 'pending' | 'reviewing';
+  review_count: number;
+  last_reviewed_at: string | null;
+  days_since_last_review: number | null;
+  priority: 'high' | 'medium' | 'low';
+  priority_score: number;
+  reasons: string[];
+}
+
+export interface ReviewRecommendationResponse {
+  user_id: string;
+  total_recommendations: number;
+  returned_count: number;
+  items: ReviewRecommendationItem[];
+}
+
+// 获取当前用户的智能复习建议
+export const getReviewRecommendations = async (
+  limit: number = 10
+): Promise<ReviewRecommendationResponse> =>
+  (
+    await api.get('/mistakes/recommendations', {
+      params: {
+        user_id: getCurrentUser().id,
+        limit,
+      },
+    })
+  ).data;
+
+// 记录一次复习并更新错题状态
+export const completeMistakeReview = async (
+  mistakeId: string,
+  status: 'reviewing' | 'mastered'
+) =>
+  (
+    await api.post(
+      `/mistakes/${encodeURIComponent(mistakeId)}/review`,
+      { status },
+      {
+        params: {
+          user_id: getCurrentUser().id,
+        },
+      }
+    )
+  ).data;

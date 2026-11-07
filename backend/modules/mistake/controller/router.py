@@ -7,6 +7,9 @@ from sqlalchemy.orm import Session
 
 from shared.db import get_db
 from modules.ingest.domain.models import Mistake
+from modules.mistake.service.recommendation_service import (
+    get_review_recommendations
+)
 from modules.mistake.service.knowledge_point_service import (
     get_knowledge_point_statistics
 )
@@ -241,3 +244,18 @@ def delete_mistake(
         "id": mistake_id,
         "message": "错题删除成功",
     }
+
+@router.get("/recommendations")
+def list_review_recommendations(
+    user_id: str = Query("u_zhangsan"),
+    limit: int = Query(10, ge=1, le=50),
+    db: Session = Depends(get_db),
+):
+    """
+    获取当前用户的个性化复习建议。
+    """
+    return get_review_recommendations(
+        db,
+        user_id,
+        limit
+    )

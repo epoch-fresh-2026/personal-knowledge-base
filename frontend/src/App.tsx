@@ -7,6 +7,7 @@ import UserProfileView from './components/UserProfileView';
 import FavoriteView from './components/FavoriteView';
 import MistakeView from './components/MistakeView';
 import KnowledgePointView from './components/KnowledgePointView';
+import ReviewRecommendationView from './components/ReviewRecommendationView';
 import { getCurrentUser } from './api';
 
 type Tab =
@@ -17,7 +18,8 @@ type Tab =
   | 'profile'
   | 'favorite'
   | 'mistake'
-  | 'knowledge';
+  | 'knowledge'
+  | 'recommendation';
 
 function App() {
   const [activeTab, setActiveTab] = useState<Tab>('chat');
@@ -83,6 +85,13 @@ function App() {
         </div>
 
         <div
+          className={`nav-item ${activeTab === 'recommendation' ? 'active' : ''}`}
+          onClick={() => setActiveTab('recommendation')}
+        >
+          💡 智能复习建议
+        </div>
+
+        <div
           className={`nav-item ${activeTab === 'square' ? 'active' : ''}`}
           onClick={() => setActiveTab('square')}
         >
@@ -133,6 +142,8 @@ function App() {
         {activeTab === 'mistake' && <MistakeView />}
 
         {activeTab === 'knowledge' && <KnowledgePointView />}
+
+        {activeTab === 'recommendation' && <ReviewRecommendationView />}
 
         {activeTab === 'square' && (
           <SquareView
