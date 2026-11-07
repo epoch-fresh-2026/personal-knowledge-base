@@ -7,6 +7,9 @@ from sqlalchemy.orm import Session
 
 from shared.db import get_db
 from modules.ingest.domain.models import Mistake
+from modules.mistake.service.knowledge_point_service import (
+    get_knowledge_point_statistics
+)
 
 router = APIRouter(prefix="/mistakes", tags=["mistakes"])
 
@@ -92,6 +95,16 @@ def list_mistakes(
         }
         for item in mistakes
     ]
+
+@router.get("/knowledge-points")
+def list_knowledge_point_statistics(
+    user_id: str = Query("u_zhangsan"),
+    db: Session = Depends(get_db),
+):
+    """
+    获取当前用户的知识点掌握情况统计。
+    """
+    return get_knowledge_point_statistics(db, user_id)
 
 class MistakeStatusUpdate(BaseModel):
     status: str
