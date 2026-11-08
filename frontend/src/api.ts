@@ -63,3 +63,148 @@ export const deleteFolder = async (folderId: string) =>
 
 export const renameFolder = async (folderId: string, newName: string) => 
   (await api.put(`/folders/${folderId}/name`, { new_name: newName }, { params: { user_id: getCurrentUser().id } })).data;
+
+// ==================== 薄弱知识点分析 ====================
+
+export interface KnowledgePointItem {
+  knowledge_point: string;
+  total_mistakes: number;
+  pending_count: number;
+  reviewing_count: number;
+  mastered_count: number;
+  review_count: number;
+  unmastered_count: number;
+  weak_rate: number;
+  status: 'weak' | 'mastered';
+}
+
+export interface KnowledgePointStatistics {
+  user_id: string;
+  total_knowledge_points: number;
+  weak_knowledge_points: number;
+  items: KnowledgePointItem[];
+}
+
+// 获取当前用户的知识点统计
+export const getKnowledgePointStatistics = async (
+  userId: string = getCurrentUser().id
+): Promise<KnowledgePointStatistics> =>
+  (
+    await api.get('/mistakes/knowledge-points', {
+      params: { user_id: userId },
+    })
+  ).data;
+
+// ==================== 个性化智能复习建议 ====================
+
+export interface ReviewRecommendationItem {
+  mistake_id: string;
+  question: string;
+  knowledge_points: string[];
+  status: 'pending' | 'reviewing';
+  review_count: number;
+  last_reviewed_at: string | null;
+  days_since_last_review: number | null;
+  priority: 'high' | 'medium' | 'low';
+  priority_score: number;
+  reasons: string[];
+}
+
+export interface ReviewRecommendationResponse {
+  user_id: string;
+  total_recommendations: number;
+  returned_count: number;
+  items: ReviewRecommendationItem[];
+}
+
+// 获取当前用户的智能复习建议
+export const getReviewRecommendations = async (
+  limit: number = 10
+): Promise<ReviewRecommendationResponse> =>
+  (
+    await api.get('/mistakes/recommendations', {
+      params: {
+        user_id: getCurrentUser().id,
+        limit,
+      },
+    })
+  ).data;
+
+// 记录一次复习并更新错题状态
+export const completeMistakeReview = async (
+  mistakeId: string,
+  status: 'reviewing' | 'mastered'
+) =>
+  (
+    await api.post(
+      `/mistakes/${encodeURIComponent(mistakeId)}/review`,
+      { status },
+      {
+        params: {
+          user_id: getCurrentUser().id,
+        },
+      }
+    )
+  ).data;
+
+// ==================== 学习数据统计与可视化 ====================
+
+export interface LearningOverview {
+  user_id: string;
+  total_mistakes: number;
+  total_reviews: number;
+  recorded_review_count: number;
+  mastered_mistakes: number;
+  total_knowledge_points: number;
+  weak_knowledge_points: number;
+
+  status_distribution: {
+    pending: number;
+    reviewing: number;
+    mastered: number;
+  };
+
+  knowledge_points: KnowledgePointItem[];
+}
+
+export interface LearningTrendItem {
+  date: string;
+  review_count: number;
+  mastered_review_count: number;
+  new_mistake_count: number;
+}
+
+export interface LearningTrendResponse {
+  user_id: string;
+  granularity: 'day' | 'week';
+  start_date: string;
+  end_date: string;
+  days: number;
+  items: LearningTrendItem[];
+}
+
+// 获取学习数据概览
+export const getLearningOverview = async (
+  userId: string = getCurrentUser().id
+): Promise<LearningOverview> =>
+  (
+    await api.get('/mistakes/analytics/overview', {
+      params: { user_id: userId },
+    })
+  ).data;
+
+// 获取每日或每周学习趋势
+export const getLearningTrends = async (
+  days: number = 30,
+  granularity: 'day' | 'week' = 'day',
+  userId: string = getCurrentUser().id
+): Promise<LearningTrendResponse> =>
+  (
+    await api.get('/mistakes/analytics/trends', {
+      params: {
+        user_id: userId,
+        days,
+        granularity,
+      },
+    })
+  ).data;
