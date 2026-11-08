@@ -146,3 +146,65 @@ export const completeMistakeReview = async (
       }
     )
   ).data;
+
+// ==================== 学习数据统计与可视化 ====================
+
+export interface LearningOverview {
+  user_id: string;
+  total_mistakes: number;
+  total_reviews: number;
+  recorded_review_count: number;
+  mastered_mistakes: number;
+  total_knowledge_points: number;
+  weak_knowledge_points: number;
+
+  status_distribution: {
+    pending: number;
+    reviewing: number;
+    mastered: number;
+  };
+
+  knowledge_points: KnowledgePointItem[];
+}
+
+export interface LearningTrendItem {
+  date: string;
+  review_count: number;
+  mastered_review_count: number;
+  new_mistake_count: number;
+}
+
+export interface LearningTrendResponse {
+  user_id: string;
+  granularity: 'day' | 'week';
+  start_date: string;
+  end_date: string;
+  days: number;
+  items: LearningTrendItem[];
+}
+
+// 获取学习数据概览
+export const getLearningOverview = async (
+  userId: string = getCurrentUser().id
+): Promise<LearningOverview> =>
+  (
+    await api.get('/mistakes/analytics/overview', {
+      params: { user_id: userId },
+    })
+  ).data;
+
+// 获取每日或每周学习趋势
+export const getLearningTrends = async (
+  days: number = 30,
+  granularity: 'day' | 'week' = 'day',
+  userId: string = getCurrentUser().id
+): Promise<LearningTrendResponse> =>
+  (
+    await api.get('/mistakes/analytics/trends', {
+      params: {
+        user_id: userId,
+        days,
+        granularity,
+      },
+    })
+  ).data;
