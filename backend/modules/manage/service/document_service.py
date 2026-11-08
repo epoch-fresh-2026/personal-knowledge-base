@@ -4,7 +4,7 @@ from modules.ingest.domain.models import Document
 from modules.ingest.service.reindex_service import reindex_document
 
 
-def update_document_meta(db: Session, doc_id: str, **kwargs):
+async def update_document_meta(db: Session, doc_id: str, **kwargs):
     """更新文档元数据及内容"""
 
     doc = db.query(Document).filter(
@@ -36,9 +36,9 @@ def update_document_meta(db: Session, doc_id: str, **kwargs):
         if "is_public" in kwargs:
             doc.is_public = kwargs["is_public"]
 
-        # 如果传入了正文，通知 ingest 重新索引
+        # 如果传入正文，重新切分并生成向量
         if content is not None:
-            reindex_document(db, doc_id, content)
+            await reindex_document(db, doc_id, content)
 
         db.commit()
         db.refresh(doc)
@@ -48,6 +48,7 @@ def update_document_meta(db: Session, doc_id: str, **kwargs):
     except Exception:
         db.rollback()
         raise
+
 
 def list_documents(db: Session, filters: dict | None = None):
     """根据筛选条件获取文档列表"""

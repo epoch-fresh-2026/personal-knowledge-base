@@ -1,4 +1,4 @@
-
+import math
 from collections.abc import Callable
 from math import log2
 from typing import Any
@@ -84,12 +84,11 @@ def merge_results(
     search_results: list[dict],
     top_k: int
 ) -> list[dict]:
-    """合并多路检索结果，根据关键词覆盖率和检索排名综合评分。"""
+    """合并多路检索结果，优先使用混合检索评分。"""
 
     merged = {}
 
     for search_result in search_results:
-        # 跳过格式错误的检索结果
         if not isinstance(search_result, dict):
             continue
 
@@ -102,7 +101,6 @@ def merge_results(
         if not isinstance(raw_chunks, (list, tuple)):
             continue
 
-        # 去重，同时保留关键词原有顺序
         keywords = list(dict.fromkeys(
             keyword
             for keyword in raw_keywords
@@ -123,7 +121,6 @@ def merge_results(
             if not isinstance(content, str):
                 continue
 
-            # 计算关键词覆盖率
             hit_count = sum(
                 1 for keyword in keywords
                 if keyword in content
@@ -131,19 +128,27 @@ def merge_results(
 
             coverage_score = (
                 hit_count / len(keywords)
-                if keywords else 0
+                if keywords else 0.0
             )
 
-            # 根据检索排名计算排名得分
-            rank_score = 1 / log2(rank + 1)
+            # 优先使用混合检索模块提供的评分
+            retrieval_score = chunk.get("retrieval_score")
 
-            # 综合评分：覆盖率占 70%，排名占 30%
-            score = (
-                0.7 * coverage_score
-                + 0.3 * rank_score
-            )
+            if (
+                isinstance(retrieval_score, (int, float))
+                and math.isfinite(retrieval_score)
+            ):
+                score = max(0.0, min(1.0, retrieval_score))
+            else:
+                # 兼容旧版检索结果
+                rank_score = 1 / log2(rank + 1)
 
-            # 同一资料保留最高综合评分
+                score = (
+                    0.7 * coverage_score
+                    + 0.3 * rank_score
+                )
+
+            # 同一资料保留最高评分
             if (
                 chunk_id not in merged
                 or score > merged[chunk_id]["_agent_score"]
@@ -154,14 +159,12 @@ def merge_results(
                     "_agent_hits": hit_count,
                 }
 
-    # 过滤综合评分低于 0.35 的资料
     results = [
         item
         for item in merged.values()
         if item["_agent_score"] >= 0.35
     ]
 
-    # 按综合评分从高到低排序
     results.sort(
         key=lambda item: item["_agent_score"],
         reverse=True

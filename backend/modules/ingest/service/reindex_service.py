@@ -4,10 +4,11 @@ from sqlalchemy.orm import Session
 
 from modules.ingest.domain.models import Document, Chunk
 from modules.ingest.service.splitter import split_markdown
+from modules.ingest.service.embedding_service import generate_chunk_embeddings
 
 
-def reindex_document(db: Session, doc_id: str, content: str):
-    """重新拆分文档内容，并替换原有 chunks"""
+async def reindex_document(db: Session, doc_id: str, content: str):
+    """重新拆分文档内容、生成向量，并替换原有 chunks。"""
 
     doc = db.query(Document).filter(
         Document.id == doc_id
@@ -19,15 +20,11 @@ def reindex_document(db: Session, doc_id: str, content: str):
     if not content or not content.strip():
         raise ValueError("文档内容不能为空")
 
-    # 重新拆分文档
     chunks_text = split_markdown(content)
 
-    # 删除旧的 chunks
-    db.query(Chunk).filter(
-        Chunk.document_id == doc_id
-    ).delete(synchronize_session=False)
+    if not chunks_text:
+        raise ValueError("文档切分结果为空，无法重新索引")
 
-    # 创建新的 chunks
     new_chunks = [
         Chunk(
             id=str(uuid.uuid4()),
@@ -38,6 +35,13 @@ def reindex_document(db: Session, doc_id: str, content: str):
         )
         for i, text in enumerate(chunks_text)
     ]
+
+    # 所有新向量生成成功后，才替换旧数据
+    await generate_chunk_embeddings(new_chunks)
+
+    db.query(Chunk).filter(
+        Chunk.document_id == doc_id
+    ).delete(synchronize_session=False)
 
     db.add_all(new_chunks)
     db.flush()
