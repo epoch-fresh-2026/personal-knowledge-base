@@ -1,21 +1,31 @@
 from uuid import uuid4
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from shared.db import get_db
-from modules.ingest.domain.models import Mistake
+from modules.ingest.domain.models import Mistake, MistakeReviewRecord
+
 from modules.mistake.service.recommendation_service import (
     get_review_recommendations
 )
+
 from modules.mistake.service.knowledge_point_service import (
     get_knowledge_point_statistics
 )
 
+from modules.mistake.service.analytics_service import (
+    get_learning_overview,
+    get_learning_trends,
+)
+
+
 router = APIRouter(prefix="/mistakes", tags=["mistakes"])
 
+
+# ==================== 请求数据模型 ====================
 
 class MistakeCreate(BaseModel):
     question: str
@@ -24,6 +34,7 @@ class MistakeCreate(BaseModel):
     error_reason: str = ""
     knowledge_points: str = ""
 
+
 class MistakeUpdate(BaseModel):
     question: str
     correct_answer: str = ""
@@ -31,8 +42,16 @@ class MistakeUpdate(BaseModel):
     error_reason: str = ""
     knowledge_points: str = ""
 
+
 class MistakeReviewComplete(BaseModel):
     status: str = "reviewing"
+
+
+class MistakeStatusUpdate(BaseModel):
+    status: str
+
+
+# ==================== 错题管理 ====================
 
 @router.post("")
 def create_mistake(
@@ -52,11 +71,15 @@ def create_mistake(
         review_count=0,
         last_reviewed_at=None,
     )
+
     db.add(mistake)
     db.commit()
     db.refresh(mistake)
 
-    return {"id": mistake.id, "message": "错题添加成功"}
+    return {
+        "id": mistake.id,
+        "message": "错题添加成功",
+    }
 
 
 @router.get("")
@@ -72,7 +95,10 @@ def list_mistakes(
     if status:
         if status not in ("pending", "reviewing", "mastered"):
             return {"message": "无效的复习状态"}
-        mistakes_query = mistakes_query.filter(Mistake.status == status)
+
+        mistakes_query = mistakes_query.filter(
+            Mistake.status == status
+        )
 
     mistakes = (
         mistakes_query
@@ -94,96 +120,14 @@ def list_mistakes(
                 item.last_reviewed_at.isoformat()
                 if item.last_reviewed_at else None
             ),
-            "created_at": item.created_at.isoformat() if item.created_at else None,
+            "created_at": (
+                item.created_at.isoformat()
+                if item.created_at else None
+            ),
         }
         for item in mistakes
     ]
 
-@router.get("/knowledge-points")
-def list_knowledge_point_statistics(
-    user_id: str = Query("u_zhangsan"),
-    db: Session = Depends(get_db),
-):
-    """
-    获取当前用户的知识点掌握情况统计。
-    """
-    return get_knowledge_point_statistics(db, user_id)
-
-class MistakeStatusUpdate(BaseModel):
-    status: str
-
-
-@router.patch("/{mistake_id}/status")
-def update_mistake_status(
-    mistake_id: str,
-    req: MistakeStatusUpdate,
-    user_id: str = Query("u_zhangsan"),
-    db: Session = Depends(get_db),
-):
-    if req.status not in ("pending", "reviewing", "mastered"):
-        return {"message": "无效的复习状态"}
-
-    mistake = (
-        db.query(Mistake)
-        .filter(
-            Mistake.id == mistake_id,
-            Mistake.user_id == user_id,
-        )
-        .first()
-    )
-
-    if mistake is None:
-        return {"message": "未找到错题"}
-
-    mistake.status = req.status
-    db.commit()
-    db.refresh(mistake)
-
-    return {
-        "id": mistake.id,
-        "status": mistake.status,
-        "message": "复习状态更新成功",
-    }
-
-@router.post("/{mistake_id}/review")
-def complete_mistake_review(
-    mistake_id: str,
-    req: MistakeReviewComplete,
-    user_id: str = Query("u_zhangsan"),
-    db: Session = Depends(get_db),
-):
-    if req.status not in ("pending", "reviewing", "mastered"):
-        return {"message": "无效的复习状态"}
-
-    mistake = (
-        db.query(Mistake)
-        .filter(
-            Mistake.id == mistake_id,
-            Mistake.user_id == user_id,
-        )
-        .first()
-    )
-
-    if mistake is None:
-        return {"message": "未找到错题"}
-
-    mistake.status = req.status
-    mistake.review_count = (mistake.review_count or 0) + 1
-    mistake.last_reviewed_at = datetime.utcnow()
-
-    db.commit()
-    db.refresh(mistake)
-
-    return {
-        "id": mistake.id,
-        "status": mistake.status,
-        "review_count": mistake.review_count,
-        "last_reviewed_at": (
-            mistake.last_reviewed_at.isoformat()
-            if mistake.last_reviewed_at else None
-        ),
-        "message": "复习记录成功",
-    }
 
 @router.put("/{mistake_id}")
 def update_mistake(
@@ -245,6 +189,118 @@ def delete_mistake(
         "message": "错题删除成功",
     }
 
+
+# ==================== 复习状态管理 ====================
+
+@router.patch("/{mistake_id}/status")
+def update_mistake_status(
+    mistake_id: str,
+    req: MistakeStatusUpdate,
+    user_id: str = Query("u_zhangsan"),
+    db: Session = Depends(get_db),
+):
+    if req.status not in ("pending", "reviewing", "mastered"):
+        return {"message": "无效的复习状态"}
+
+    mistake = (
+        db.query(Mistake)
+        .filter(
+            Mistake.id == mistake_id,
+            Mistake.user_id == user_id,
+        )
+        .first()
+    )
+
+    if mistake is None:
+        return {"message": "未找到错题"}
+
+    mistake.status = req.status
+
+    db.commit()
+    db.refresh(mistake)
+
+    return {
+        "id": mistake.id,
+        "status": mistake.status,
+        "message": "复习状态更新成功",
+    }
+
+
+# ==================== 错题复习记录 ====================
+
+@router.post("/{mistake_id}/review")
+def complete_mistake_review(
+    mistake_id: str,
+    req: MistakeReviewComplete,
+    user_id: str = Query("u_zhangsan"),
+    db: Session = Depends(get_db),
+):
+    if req.status not in ("pending", "reviewing", "mastered"):
+        return {"message": "无效的复习状态"}
+
+    mistake = (
+        db.query(Mistake)
+        .filter(
+            Mistake.id == mistake_id,
+            Mistake.user_id == user_id,
+        )
+        .first()
+    )
+
+    if mistake is None:
+        return {"message": "未找到错题"}
+
+    # 统一记录本次复习时间
+    reviewed_at = datetime.utcnow()
+
+    # 更新原有错题数据
+    mistake.status = req.status
+    mistake.review_count = (mistake.review_count or 0) + 1
+    mistake.last_reviewed_at = reviewed_at
+
+    # 新增一条独立复习历史
+    review_record = MistakeReviewRecord(
+        id=str(uuid4()),
+        mistake_id=mistake.id,
+        user_id=user_id,
+        status=req.status,
+        reviewed_at=reviewed_at,
+    )
+
+    db.add(review_record)
+
+    # 两项修改在同一个事务中提交
+    db.commit()
+    db.refresh(mistake)
+
+    return {
+        "id": mistake.id,
+        "status": mistake.status,
+        "review_count": mistake.review_count,
+        "last_reviewed_at": (
+            mistake.last_reviewed_at.isoformat()
+            if mistake.last_reviewed_at else None
+        ),
+        "review_record_id": review_record.id,
+        "message": "复习记录成功",
+    }
+
+
+# ==================== 薄弱知识点分析 ====================
+
+@router.get("/knowledge-points")
+def list_knowledge_point_statistics(
+    user_id: str = Query("u_zhangsan"),
+    db: Session = Depends(get_db),
+):
+    """
+    获取当前用户的知识点掌握情况统计。
+    """
+    return get_knowledge_point_statistics(db, user_id)
+
+
+# ==================== 个性化智能复习建议 ====================
+
 @router.get("/recommendations")
 def list_review_recommendations(
     user_id: str = Query("u_zhangsan"),
@@ -259,3 +315,44 @@ def list_review_recommendations(
         user_id,
         limit
     )
+
+
+# ==================== 学习数据统计与可视化 ====================
+
+@router.get("/analytics/overview")
+def learning_analytics_overview(
+    user_id: str = Query("u_zhangsan"),
+    db: Session = Depends(get_db),
+):
+    """
+    获取当前用户的学习数据概览。
+    """
+    return get_learning_overview(
+        db,
+        user_id,
+    )
+
+
+@router.get("/analytics/trends")
+def learning_analytics_trends(
+    user_id: str = Query("u_zhangsan"),
+    days: int = Query(30, ge=7, le=365),
+    granularity: str = Query("day"),
+    db: Session = Depends(get_db),
+):
+    """
+    获取当前用户的每日或每周学习趋势。
+    """
+    try:
+        return get_learning_trends(
+            db,
+            user_id,
+            days,
+            granularity,
+        )
+
+    except ValueError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=str(e),
+        )
