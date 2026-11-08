@@ -1,4 +1,6 @@
+
 from collections.abc import Callable
+from math import log2
 from typing import Any
 
 from modules.agent.tools.retrieve_tool import retrieve
@@ -6,9 +8,7 @@ from modules.agent.tools.qa_tool import generate_answer
 from shared.llm import chat_completion
 
 
-# 最多进行两轮检索：
-# 第一轮：原始问题 + 改写问题
-# 第二轮：调整后的查询
+# 最多进行两轮检索
 MAX_RETRIEVAL_ROUNDS = 2
 
 # 工作流最大步骤数，防止无限执行
@@ -84,56 +84,86 @@ def merge_results(
     search_results: list[dict],
     top_k: int
 ) -> list[dict]:
-    """合并多路检索结果，根据关键词覆盖率重新排序。"""
+    """合并多路检索结果，根据关键词覆盖率和检索排名综合评分。"""
 
     merged = {}
 
     for search_result in search_results:
-        keywords = list(set(search_result.get("keywords", [])))
+        # 跳过格式错误的检索结果
+        if not isinstance(search_result, dict):
+            continue
 
-        for chunk in search_result.get("results", []):
+        raw_keywords = search_result.get("keywords")
+        raw_chunks = search_result.get("results")
+
+        if not isinstance(raw_keywords, (list, tuple)):
+            continue
+
+        if not isinstance(raw_chunks, (list, tuple)):
+            continue
+
+        # 去重，同时保留关键词原有顺序
+        keywords = list(dict.fromkeys(
+            keyword
+            for keyword in raw_keywords
+            if isinstance(keyword, str) and keyword
+        ))
+
+        for rank, chunk in enumerate(raw_chunks, start=1):
+            if not isinstance(chunk, dict):
+                continue
+
             chunk_id = chunk.get("chunk_id")
 
             if not chunk_id:
                 continue
 
             content = chunk.get("content", "")
+
+            if not isinstance(content, str):
+                continue
+
+            # 计算关键词覆盖率
             hit_count = sum(
                 1 for keyword in keywords
-                if keyword and keyword in content
+                if keyword in content
             )
 
-            score = (
+            coverage_score = (
                 hit_count / len(keywords)
                 if keywords else 0
             )
 
-            if chunk_id not in merged:
+            # 根据检索排名计算排名得分
+            rank_score = 1 / log2(rank + 1)
+
+            # 综合评分：覆盖率占 70%，排名占 30%
+            score = (
+                0.7 * coverage_score
+                + 0.3 * rank_score
+            )
+
+            # 同一资料保留最高综合评分
+            if (
+                chunk_id not in merged
+                or score > merged[chunk_id]["_agent_score"]
+            ):
                 merged[chunk_id] = {
                     **chunk,
                     "_agent_score": score,
                     "_agent_hits": hit_count,
                 }
-            else:
-                # 同一资料在不同检索路径中出现时，
-                # 保留表现更好的匹配分数。
-                merged[chunk_id]["_agent_score"] = max(
-                    merged[chunk_id]["_agent_score"],
-                    score
-                )
 
-                merged[chunk_id]["_agent_hits"] = max(
-                    merged[chunk_id]["_agent_hits"],
-                    hit_count
-                )
+    # 过滤综合评分低于 0.35 的资料
+    results = [
+        item
+        for item in merged.values()
+        if item["_agent_score"] >= 0.35
+    ]
 
-    results = list(merged.values())
-
+    # 按综合评分从高到低排序
     results.sort(
-        key=lambda item: (
-            item["_agent_score"],
-            item["_agent_hits"]
-        ),
+        key=lambda item: item["_agent_score"],
         reverse=True
     )
 
@@ -148,7 +178,7 @@ def is_sufficient(chunks: list[dict]) -> bool:
 
     best_score = chunks[0].get("_agent_score", 0)
 
-    # 最高关键词覆盖率达到 50%，认为检索结果初步合格。
+    # 最高综合评分达到 50%，认为检索结果初步合格
     return best_score >= 0.5
 
 
@@ -175,7 +205,25 @@ def build_sources(chunks: list[dict]) -> list[dict]:
             "content": chunk["content"],
         }
         for chunk in chunks
+        if all(
+            key in chunk
+            for key in ("chunk_id", "document_id", "content")
+        )
     ]
+
+
+def get_result_count(result: dict) -> int:
+    """安全获取检索结果数量。"""
+
+    if not isinstance(result, dict):
+        return 0
+
+    chunks = result.get("results")
+
+    if not isinstance(chunks, (list, tuple)):
+        return 0
+
+    return len(chunks)
 
 
 async def agent_chat(
@@ -247,7 +295,7 @@ async def agent_chat(
                 "success",
                 round=1,
                 query=query,
-                result_count=len(result.get("results", []))
+                result_count=get_result_count(result)
             )
 
         except Exception as e:
@@ -300,6 +348,9 @@ async def agent_chat(
                 retrieve_func
             )
 
+            if not isinstance(retry_result, dict):
+                retry_result = {}
+
             search_results.append(retry_result)
 
             record_step(
@@ -308,9 +359,7 @@ async def agent_chat(
                 "success",
                 round=2,
                 query=retry_query,
-                result_count=len(
-                    retry_result.get("results", [])
-                )
+                result_count=get_result_count(retry_result)
             )
 
         except Exception as e:
