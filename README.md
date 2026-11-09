@@ -1,76 +1,255 @@
-# 个人知识库管理系统 (personal-knowledge-base)
+# 个人知识库管理系统（Personal Knowledge Base）
 
-> 把散落的文档、笔记、链接丢进来，用自然语言提问，答案带出处。
+一个基于人工智能技术的个人知识管理与智能学习系统，支持多源知识采集、文档管理、智能检索、知识问答、错题管理和个性化复习。
 
-[![CI](https://github.com/epoch-fresh-2026/personal-knowledge-base/actions/workflows/ci.yml/badge.svg)](https://github.com/epoch-fresh-2026/personal-knowledge-base/actions)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Python 3.11](https://img.shields.io/badge/Python-3.11-blue.svg)](https://www.python.org/)
-[![React 18](https://img.shields.io/badge/React-18-blue.svg)](https://react.dev/)
+用户可以将分散的学习资料集中存储，通过自然语言提问快速获取相关知识，并利用错题分析与智能复习建议辅助学习。
 
-## 📖 解决什么问题
+## 一、项目背景与现有方案分析
 
-收藏夹吃灰、笔记散落各处，信息越攒越多却越没法用。
-这个系统让你：随手丢进去 → 一句话问出来 → 知道答案从哪来。
+随着数字化学习和人工智能技术的发展，个人知识管理、AI 知识问答和在线学习平台逐渐成为知识获取与学习辅助的重要工具。然而，现有方案在知识管理、智能检索和个性化学习支持等方面仍存在一些值得改进的问题。
 
-## ✨ 功能演示
+### 1. 知识管理与组织成本较高
 
-- **📄 多源上传**：支持 Markdown、PDF、Word、代码文件，以及图片/视频的物理归档。
-- **🤖 智能问答**：基于私有资料库的 Agent 混合检索，带强制防幻觉与精准溯源。
-- **🌐 社区共享**：支持文档/收藏夹设为公开，广场浏览他人分享，一键收藏。
-- **📁 资料管理**：自定义收藏夹分类，支持文件夹改名、删除、文件移出与多模态在线预览。
-- **👥 多用户隔离**：模拟多用户身份切换，严格的私有数据权限控制。
+传统笔记和知识管理工具通常提供较为丰富的文档编辑、分类和协作功能，但面对来源多样、数量不断增长的学习资料，用户仍需要投入较多精力进行整理、分类和维护。不同类型的知识资料之间缺乏有效关联，也增加了后续查找和利用的难度。
 
-*(此处插入 1 张主界面截图或 GIF)*
+### 2. 知识检索与智能问答存在局限
 
-## 🏗️ 技术栈与架构
+传统关键词检索对用户输入的关键词具有一定依赖，当用户无法准确描述目标内容时，检索效果可能受到影响。通用大语言模型虽然能够提供自然语言问答能力，但其回答不一定充分结合用户的个人知识资料，并且仍存在事实错误和信息来源不够可靠等问题。
 
-| 层 | 选型 |
+### 3. 个性化学习支持不足
+
+部分在线学习平台主要围绕课程内容、学习进度和统一的教学安排展开，对不同学习者的知识基础、薄弱环节和学习进度考虑不够充分。个性化学习系统虽然能够利用学习数据提供差异化支持，但其效果仍受到数据质量、算法适用性和学习者特征识别能力等因素影响。
+
+### 4. 错题管理与持续复习衔接不足
+
+传统错题管理方式主要侧重于错题收集、分类和再次查看，对错题背后所反映的知识薄弱环节缺乏持续跟踪。错题记录、知识点分析和复习安排之间如果缺少有效衔接，就难以形成持续改进的学习闭环。
+
+### 5. 学习数据分析与实际行动脱节
+
+部分学习分析工具主要通过学习时长、任务完成量和测试成绩等指标展示学习情况，但统计结果并不一定能够直接转化为可执行的学习建议。如何从学习数据中识别薄弱知识点，并进一步形成有针对性的复习任务，是值得研究和改进的方向。
+
+## 二、项目设计思路
+
+针对上述问题，本项目设计并实现一套集个人知识管理、智能检索、AI 知识问答和学习辅助于一体的个人知识库管理系统。
+
+系统以个人知识资料和学习记录为基础，结合自然语言处理、Embedding、混合检索及大语言模型等技术，实现多源知识采集、统一组织、智能检索和知识问答。
+
+在此基础上，系统引入错题管理、知识点分析和个性化智能复习建议，将知识积累、问题记录、薄弱环节识别和复习安排联系起来，形成从知识管理到学习反馈的完整应用流程。
+
+## 三、项目简介
+
+在日常学习过程中，知识资料往往分散在不同文件和平台中，查找困难，复习效率较低。
+
+本项目设计并实现了一套个人知识库管理系统，通过文档解析、知识切分、混合检索和大语言模型等技术，实现知识的集中管理与智能利用。
+
+系统同时引入错题管理、学习数据分析和个性化复习建议，形成从知识积累到学习反馈的完整流程。
+
+## 四、核心功能
+
+### 1. 多源知识采集
+- 支持 Markdown、PDF、Word、代码等文件上传。
+- 支持网页 URL 内容采集。
+- 支持图片、视频等资料的上传与管理。
+- 自动解析文档并进行知识切分与入库。
+
+### 2. 智能检索与问答
+- 支持自然语言提问。
+- 结合关键词检索与向量检索进行混合检索。
+- 使用 Agent 对检索结果进行排序和组织。
+- 基于知识库内容生成回答。
+- 提供相关知识来源，辅助用户核查答案。
+
+### 3. 知识管理
+- 支持自定义资料夹及分类管理。
+- 支持文档重命名、移动和删除。
+- 支持文档元数据修改。
+- 支持标签创建、删除、置顶及关联管理。
+- 支持按标签筛选知识文档。
+
+### 4. 多用户与知识共享
+- 支持模拟多用户身份切换。
+- 支持个人资料管理。
+- 支持文档和资料夹公开共享。
+- 支持浏览共享知识及收藏内容。
+- 实现用户数据访问隔离。
+
+### 5. 错题管理
+- 支持错题添加、编辑和删除。
+- 支持错题知识点及错误原因记录。
+- 支持错题复习状态管理。
+- 记录复习次数和最近复习时间。
+- 支持将已掌握错题标记为已掌握。
+
+### 6. 学习数据分析
+- 统计学习情况和错题数据。
+- 分析知识点掌握情况。
+- 识别薄弱知识点。
+- 提供学习数据可视化。
+
+### 7. 个性化智能复习建议
+- 根据错题复习状态安排复习优先级。
+- 综合薄弱知识点和最近复习时间计算推荐评分。
+- 展示复习任务及推荐理由。
+- 支持从推荐任务直接进入复习流程。
+
+## 五、技术架构
+
+| 层次 | 技术 |
 |---|---|
-| 前端 | React + Vite + TypeScript |
-| 后端 | Python 3.11 + FastAPI |
-| 数据库 | SQLite（开发阶段） |
-| 检索 | **jieba 关键词倒排 + 混合检索** |
-| LLM | DeepSeek API |
-| Agent | **自研步进式状态机（已落地）** |
+| 前端框架 | React 19 |
+| 前端语言 | TypeScript |
+| 构建工具 | Vite |
+| HTTP 请求 | Axios |
+| 后端框架 | FastAPI |
+| 数据库 | SQLite |
+| ORM | SQLAlchemy |
+| 文本处理 | jieba |
+| 检索技术 | 关键词检索、Embedding、混合检索 |
+| 大语言模型 | DeepSeek API |
+| 向量模型 | DashScope Embedding API |
 
-*(此处可插入简化的架构图或 Mermaid 流程图)*
+系统采用前后端分离架构，后端按照模块化方式组织业务代码。
 
-## 🚀 如何本地运行
+## 六、项目目录
 
-### 1. 环境准备
+```text
+personal-knowledge-base/
+├── backend/
+│   ├── api/                 # API 路由
+│   ├── migrations/          # 数据库迁移脚本
+│   ├── modules/
+│   │   ├── ingest/          # 知识采集与解析
+│   │   ├── manage/          # 知识管理
+│   │   ├── retrieve/        # 检索功能
+│   │   ├── mistake/         # 错题管理
+│   │   └── ...              # 其他业务模块
+│   ├── shared/              # 数据库及公共配置
+│   ├── tests/               # 自动化测试
+│   ├── uploads/             # 上传文件
+│   ├── main.py              # 后端入口
+│   └── requirements.txt
+│
+├── frontend/
+│   ├── src/
+│   │   ├── components/      # 页面及组件
+│   │   ├── api.ts           # API 请求
+│   │   └── ...
+│   ├── package.json
+│   └── vite.config.ts
+│
+└── README.md
+```
+
+## 七、本地运行
+
+### 1. 环境要求
+
 - Python 3.11+
 - Node.js 18+
-- 一个 DeepSeek API Key（[获取地址](https://platform.deepseek.com/)）
+- npm
+- DeepSeek API Key
+- DashScope API Key（使用在线 Embedding 服务时需要）
 
-### 2. 启动后端
-```bash
+### 2. 配置后端
+
+进入项目目录：
+
+```cmd
 cd backend
-python -m venv .venv
-source .venv/bin/activate  # Windows 用 .venv\Scripts\activate
-pip install -r requirements.txt
-# 配置环境变量：复制 .env.example 为 .env，并填入你的 API Key
-cp .env.example .env
-# 启动后端
-uvicorn main:app --reload
 ```
-> 后端跑在 `http://localhost:8000`，API 文档见 `http://localhost:8000/docs`。
 
-### 3. 启动前端
-```bash
+创建虚拟环境：
+
+```cmd
+python -m venv .venv
+```
+
+安装依赖：
+
+```cmd
+.venv\Scripts\python.exe -m pip install -r requirements.txt
+```
+
+根据 `shared/config.py` 中的配置，在 `backend/.env` 中设置所需环境变量：
+
+```env
+DATABASE_URL=sqlite:///./pkb.db
+
+LLM_API_KEY=你的DeepSeek_API_Key
+LLM_BASE_URL=https://api.deepseek.com
+
+EMBEDDING_API_KEY=你的DashScope_API_Key
+EMBEDDING_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+EMBEDDING_MODEL=text-embedding-v3
+```
+
+启动后端：
+
+```cmd
+.venv\Scripts\python.exe -m uvicorn main:app --reload
+```
+
+后端默认运行地址：
+
+- 服务地址：http://localhost:8000
+- API 文档：http://localhost:8000/docs
+- 健康检查：http://localhost:8000/health
+
+### 3. 配置前端
+
+新开一个 CMD 窗口，在项目根目录执行：
+
+```cmd
 cd frontend
+```
+
+安装依赖：
+
+```cmd
 npm install
+```
+
+启动前端：
+
+```cmd
 npm run dev
 ```
-> 前端跑在 `http://localhost:5173`。
 
-## 🗺️ Roadmap（后续演进计划）
-- [ ] **向量检索**：接入 `pgvector`，实现纯向量语义检索与 RRF（倒数排名融合）。
-- [ ] **Agent 深度编排**：引入更成熟的 Agent 框架（如 LangGraph），支持更复杂的多步推理与自动纠错。
-- [ ] **多模态扩展**：支持 OCR 提取图片文字，以及视频 ASR 语音转文字。
+前端默认访问地址：
 
-## 📚 项目文档与资源
-- [产品需求文档 (Issue #1)](https://github.com/epoch-fresh-2026/personal-knowledge-base/issues/1)
-- [架构设计文档 (Issue #2)](https://github.com/epoch-fresh-2026/personal-knowledge-base/issues/2)
+http://localhost:5173
 
-## 📜 License
-This project is licensed under the MIT License.
+## 八、测试与构建
+
+### 后端自动化测试
+
+在 `backend` 目录执行：
+
+```cmd
+.venv\Scripts\python.exe -m pytest
+```
+
+### 前端生产构建
+
+在 `frontend` 目录执行：
+
+```cmd
+npm run build
+```
+
+## 九、数据库说明
+
+项目默认使用 SQLite 数据库。
+
+数据库连接地址通过 `backend/.env` 中的 `DATABASE_URL` 配置。
+
+系统启动时通过 SQLAlchemy 初始化数据库表结构。对于已有数据库的结构变更，使用 `backend/migrations/` 中的迁移脚本进行处理。
+
+## 十、项目文档
+
+- [产品需求文档（Issue #1）](https://github.com/epoch-fresh-2026/personal-knowledge-base/issues/1)
+- [系统架构设计文档（Issue #2）](https://github.com/epoch-fresh-2026/personal-knowledge-base/issues/2)
+
+## 十一、项目许可证
+
+本项目采用 MIT License。
