@@ -39,10 +39,24 @@ export default function FolderView() {
   const [selectedDoc, setSelectedDoc] = useState<any>(null);
 
   useEffect(() => {
-    loadFolders();
-    loadTags();
-    handleSelect(null);
-  }, []);
+  let cancelled = false;
+
+  Promise.all([getFolders(), getAllTags(), getAllDocs()])
+    .then(([folderData, tagData, docData]) => {
+      if (cancelled) return;
+
+      setFolders(folderData);
+      setTags(tagData);
+      setDocs(docData);
+    })
+    .catch((error) => {
+      console.error('初始化资料库失败：', error);
+    });
+
+  return () => {
+    cancelled = true;
+  };
+}, []);
 
   const loadFolders = async () => {
     try {
@@ -347,7 +361,7 @@ export default function FolderView() {
       try {
         const res = await getDocContent(doc.id);
         setPreviewContent(res.content);
-      } catch (e) {
+      } catch {
         setPreviewContent('加载失败');
       }
     }
@@ -914,6 +928,7 @@ export default function FolderView() {
               selectedDoc.source_url && (
                 <img
                   src={`http://localhost:8000${selectedDoc.source_url}`}
+                  alt={selectedDoc.title || '文档图片'}
                   style={{
                     maxWidth: '100%',
                     borderRadius: '8px',
