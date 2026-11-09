@@ -1,3 +1,4 @@
+
 import { useCallback, useEffect, useState } from 'react';
 
 import {
@@ -53,9 +54,39 @@ function LearningAnalyticsView() {
     }
   }, [days, granularity]);
 
+  // 初次加载及统计范围变化时获取数据
   useEffect(() => {
-    void loadData();
-  }, [loadData]);
+    let cancelled = false;
+
+    const fetchData = async () => {
+      try {
+        const [overviewResult, trendsResult] = await Promise.all([
+          getLearningOverview(),
+          getLearningTrends(days, granularity),
+        ]);
+
+        if (!cancelled) {
+          setOverview(overviewResult);
+          setTrends(trendsResult);
+          setError('');
+        }
+      } catch {
+        if (!cancelled) {
+          setError('学习数据加载失败，请检查后端服务。');
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    };
+
+    void fetchData();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [days, granularity]);
 
   const summaryCards = [
     {

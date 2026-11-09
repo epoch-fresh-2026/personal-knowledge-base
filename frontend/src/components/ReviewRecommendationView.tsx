@@ -1,3 +1,4 @@
+
 import { useCallback, useEffect, useState } from 'react';
 import {
   getReviewRecommendations,
@@ -34,12 +35,10 @@ function ReviewRecommendationView() {
 
   // 获取复习建议
   const loadRecommendations = useCallback(async () => {
-    setLoading(true);
-    setError('');
-
     try {
       const result = await getReviewRecommendations(10);
       setData(result);
+      setError('');
     } catch {
       setError('复习建议加载失败，请检查后端服务。');
     } finally {
@@ -47,9 +46,43 @@ function ReviewRecommendationView() {
     }
   }, []);
 
+  // 首次加载
   useEffect(() => {
+    let cancelled = false;
+
+    const fetchRecommendations = async () => {
+      try {
+        const result = await getReviewRecommendations(10);
+
+        if (!cancelled) {
+          setData(result);
+          setError('');
+        }
+      } catch {
+        if (!cancelled) {
+          setError('复习建议加载失败，请检查后端服务。');
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    };
+
+    void fetchRecommendations();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // 手动刷新
+  const handleRefresh = () => {
+    setLoading(true);
+    setError('');
+    setNotice('');
     void loadRecommendations();
-  }, [loadRecommendations]);
+  };
 
   // 完成一次复习
   const handleReview = async (
@@ -115,10 +148,7 @@ function ReviewRecommendationView() {
         </div>
 
         <button
-          onClick={() => {
-            setNotice('');
-            void loadRecommendations();
-          }}
+          onClick={handleRefresh}
           disabled={loading}
           style={{
             padding: '9px 16px',

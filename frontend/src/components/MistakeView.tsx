@@ -1,5 +1,5 @@
 
-import { useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useState, type FormEvent } from 'react';
 
 type MistakeStatus = 'pending' | 'reviewing' | 'mastered';
 
@@ -40,7 +40,7 @@ function MistakeView() {
   ).id || 'u_zhangsan';
 
   // 获取错题列表
-  const loadMistakes = async () => {
+  const loadMistakes = useCallback(async () => {
     try {
       const params = new URLSearchParams({
         user_id: userId,
@@ -62,10 +62,47 @@ function MistakeView() {
     } catch {
       setMessage('无法连接后端，请确认后端服务正在运行。');
     }
-  };
+  }, [userId, statusFilter]);
 
+  // 初次加载及筛选条件变化时获取错题
   useEffect(() => {
-    void loadMistakes();
+    let cancelled = false;
+
+    const fetchMistakes = async () => {
+      try {
+        const params = new URLSearchParams({
+          user_id: userId,
+        });
+
+        if (statusFilter !== 'all') {
+          params.append('status', statusFilter);
+        }
+
+        const response = await fetch(
+          `${API_BASE}/mistakes?${params.toString()}`
+        );
+
+        if (!response.ok) {
+          throw new Error('获取错题列表失败');
+        }
+
+        const result: Mistake[] = await response.json();
+
+        if (!cancelled) {
+          setMistakes(result);
+        }
+      } catch {
+        if (!cancelled) {
+          setMessage('无法连接后端，请确认后端服务正在运行。');
+        }
+      }
+    };
+
+    void fetchMistakes();
+
+    return () => {
+      cancelled = true;
+    };
   }, [userId, statusFilter]);
 
   // 完成一次复习
@@ -261,7 +298,6 @@ function MistakeView() {
         记录错题、分析错误原因，逐步建立自己的薄弱知识点库。
       </p>
 
-      {/* 新增错题 */}
       <form
         onSubmit={handleSubmit}
         style={{
@@ -357,7 +393,6 @@ function MistakeView() {
         {message && <p role="status">{message}</p>}
       </form>
 
-      {/* 错题列表 */}
       <div
         style={{
           display: 'flex',

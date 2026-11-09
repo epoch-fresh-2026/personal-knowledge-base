@@ -1,3 +1,4 @@
+
 import { useCallback, useEffect, useState } from 'react';
 import {
   getKnowledgePointStatistics,
@@ -11,12 +12,10 @@ function KnowledgePointView() {
   const [error, setError] = useState('');
 
   const loadStatistics = useCallback(async () => {
-    setLoading(true);
-    setError('');
-
     try {
       const result = await getKnowledgePointStatistics();
       setData(result);
+      setError('');
     } catch {
       setError('知识点统计加载失败，请检查后端服务。');
     } finally {
@@ -24,9 +23,39 @@ function KnowledgePointView() {
     }
   }, []);
 
-  useEffect(() => {
+    useEffect(() => {
+    let cancelled = false;
+
+    const fetchStatistics = async () => {
+      try {
+        const result = await getKnowledgePointStatistics();
+
+        if (!cancelled) {
+          setData(result);
+          setError('');
+        }
+      } catch {
+        if (!cancelled) {
+          setError('知识点统计加载失败，请检查后端服务。');
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    };
+
+    void fetchStatistics();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const handleRefresh = () => {
+    setLoading(true);
+    setError('');
     void loadStatistics();
-  }, [loadStatistics]);
+  };
 
   const summaryCards = [
     {
@@ -59,7 +88,6 @@ function KnowledgePointView() {
         margin: '0 auto',
       }}
     >
-      {/* 页面标题 */}
       <div
         style={{
           display: 'flex',
@@ -80,7 +108,7 @@ function KnowledgePointView() {
         </div>
 
         <button
-          onClick={() => void loadStatistics()}
+          onClick={handleRefresh}
           disabled={loading}
           style={{
             padding: '9px 16px',
@@ -94,7 +122,6 @@ function KnowledgePointView() {
         </button>
       </div>
 
-      {/* 错误提示 */}
       {error && (
         <div
           style={{
@@ -109,7 +136,6 @@ function KnowledgePointView() {
         </div>
       )}
 
-      {/* 加载状态 */}
       {loading && !data && (
         <div style={{ padding: 40, textAlign: 'center', color: '#6b7280' }}>
           正在加载知识点统计...
@@ -118,7 +144,6 @@ function KnowledgePointView() {
 
       {data && (
         <>
-          {/* 数据概览 */}
           <div
             style={{
               display: 'grid',
@@ -160,7 +185,6 @@ function KnowledgePointView() {
             ))}
           </div>
 
-          {/* 知识点列表 */}
           <div
             style={{
               background: '#fff',
@@ -245,7 +269,6 @@ function KnowledgePointCard({
         borderBottom: '1px solid #f0f0f0',
       }}
     >
-      {/* 知识点名称与状态 */}
       <div
         style={{
           display: 'flex',
@@ -273,7 +296,6 @@ function KnowledgePointCard({
         </span>
       </div>
 
-      {/* 统计指标 */}
       <div
         style={{
           display: 'grid',
@@ -290,7 +312,6 @@ function KnowledgePointCard({
         <Metric label="薄弱率" value={`${rate}%`} />
       </div>
 
-      {/* 状态分布条 */}
       <div
         style={{
           display: 'flex',
