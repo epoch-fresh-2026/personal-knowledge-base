@@ -11,7 +11,8 @@ async def reindex_document(db: Session, doc_id: str, content: str):
     """重新拆分文档内容、生成向量，并替换原有 chunks。"""
 
     doc = db.query(Document).filter(
-        Document.id == doc_id
+        Document.id == doc_id,
+        Document.is_deleted == False,
     ).first()
 
     if not doc:

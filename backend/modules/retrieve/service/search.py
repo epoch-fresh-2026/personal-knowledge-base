@@ -5,7 +5,7 @@ import re
 import jieba
 from sqlalchemy.orm import Session
 
-from modules.ingest.domain.models import Chunk
+from modules.ingest.domain.models import Chunk, Document
 from modules.retrieve.repository import chunk_repo
 from shared.embedding import get_embedding
 
@@ -85,9 +85,14 @@ async def search(
     try:
         query_vector = await get_embedding(query)
 
+        # 排除已删除文档的 chunks（Issue #47 规则 C）。
+        # 用 relationship has() 生成 EXISTS 过滤，保持调用链不变。
         chunks = (
             db.query(Chunk)
-            .filter(Chunk.embedding.isnot(None))
+            .filter(
+                Chunk.embedding.isnot(None),
+                Chunk.document.has(Document.is_deleted == False),
+            )
             .all()
         )
 

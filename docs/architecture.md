@@ -1,9 +1,13 @@
 # Personal Knowledge Base — 系统架构与模块设计
 
-> 文档版本：1.0
-> 更新日期：2026-11-07
-> 文档状态：按当前已实现代码整理
+> 文档版本：1.1
+> 更新日期：2026-11-16
+> 文档状态：按当前已实现代码整理（Issue #54 按真实业务边界校对模块、路由与数据流）
 > 适用仓库：`epoch-fresh-2026/personal-knowledge-base`
+>
+> 阅读约定：本文只描述**已实现**的结构；**未实现**能力与**未来设想**统一在第 11 节列出，
+> 不将规划内容写作现有能力。产品视角的用户故事、主流程、异常流程与验收标准见
+> `docs/user-stories.md`；错题领域的统计与推荐口径见 `docs/mistake-business-rules.md`。
 
 ## 1. 项目概述
 
@@ -72,38 +76,44 @@ personal-knowledge-base/
 ├─ backend/
 │  ├─ main.py                     # FastAPI 应用入口
 │  ├─ api/
-│  │  └─ router.py                # 统一 API 路由及业务接口注册
-│  ├─ shared/
+│  │  └─ router.py                # 路由汇总：仅 include 各业务域 Router，无业务实现
+│  ├─ shared/                     # 跨模块基础设施
 │  │  ├─ db.py                    # SQLAlchemy Engine、Session、Base、get_db、init_db
-│  │  └─ config.py                # 数据库等公共配置
+│  │  ├─ config.py                # 数据库、LLM、Embedding 等公共配置
+│  │  ├─ embedding.py             # 唯一的 Embedding 供应商调用实现（get_embedding）
+│  │  ├─ llm.py                   # LLM 客户端（chat_completion）
+│  │  └─ user_context.py          # 模拟用户上下文依赖 get_current_user（Issue #45）
 │  ├─ modules/
 │  │  ├─ ingest/                  # 文档收录与解析
-│  │  │  ├─ controller/
-│  │  │  ├─ domain/               # 文档、分块等核心模型
+│  │  │  ├─ controller/router.py  # 收录 HTTP 路由（upload / url）
+│  │  │  ├─ domain/               # 文档、分块、用户、 FavoriteDocument 等模型
 │  │  │  ├─ repository/           # 文档持久化
-│  │  │  └─ service/              # 文本切分等处理逻辑
+│  │  │  └─ service/              # ingest_service、embedding_service、splitter、reindex
 │  │  ├─ retrieve/                # 知识检索
-│  │  │  ├─ controller/
-│  │  │  ├─ domain/
-│  │  │  ├─ repository/
-│  │  │  └─ service/              # search 服务
+│  │  │  ├─ controller/router.py  # 检索 HTTP 路由（search）
+│  │  │  ├─ repository/           # chunk_repo 数据访问
+│  │  │  └─ service/              # search 混合检索服务
 │  │  ├─ agent/                   # Agent 智能问答工作流
-│  │  │  ├─ controller/
+│  │  │  ├─ controller/router.py  # 问答 HTTP 路由（agent/ask）
 │  │  │  ├─ service/              # agent_service.py
 │  │  │  └─ tools/                # retrieve_tool.py、qa_tool.py
-│  │  ├─ manage/                  # 文档、文件夹、标签、收藏和公开管理
-│  │  │  ├─ controller/
-│  │  │  ├─ domain/
-│  │  │  ├─ repository/
-│  │  │  └─ service/              # folder/tag/document 服务
+│  │  ├─ manage/                  # 文档/文件夹/标签/收藏和公开管理
+│  │  │  ├─ controller/router.py  # 管理 HTTP 路由（文档/文件夹/标签/广场/收藏）
+│  │  │  ├─ domain/               # Folder、DocumentFolder、Tag、DocumentTag 等模型
+│  │  │  └─ service/              # document_service（含删除生命周期）、folder_service、tag_service
 │  │  └─ mistake/                 # 错题与学习管理
-│  │     ├─ controller/           # router.py
-│  │     └─ service/              # 知识点统计、复习推荐
+│  │     ├─ controller/router.py  # 错题 HTTP 路由
+│  │     ├─ domain/models.py      # Mistake、MistakeReviewRecord 唯一正式定义（Issue #53）
+│  │     └─ service/              # 知识点统计、复习推荐、学习分析
 │  ├─ migrations/                 # 数据库迁移脚本
 │  ├─ tests/                      # 自动化测试
 │  ├─ uploads/                    # 上传文件存储目录
 │  ├─ requirements.txt
 │  └─ .env.example
+├─ docs/
+│  ├─ architecture.md             # 本文：技术架构、模块职责、依赖与数据流
+│  ├─ user-stories.md             # 用户故事、主流程、异常流程与验收标准
+│  └─ mistake-business-rules.md   # 错题统计与推荐口径
 ├─ frontend/
 │  ├─ src/
 │  │  ├─ main.tsx                 # React 启动入口
@@ -126,29 +136,32 @@ personal-knowledge-base/
 └─ README.md
 ```
 
-实际目录中存在部分预留的 `controller`、`domain`、`repository` 子目录；各模块的分层完整度并不完全相同。当前统一 API 路由主要集中在 `backend/api/router.py`，错题模块通过独立的 `backend/modules/mistake/controller/router.py` 注册。
+Issue #54 后，API 路由已按真实业务域拆分到各模块的 `controller/router.py`；`backend/api/router.py` 只负责汇总注册，不再包含业务实现。部分模块仍保留仅含 `.gitkeep` 的预留 `domain`/`repository` 目录（如 retrieve/domain、manage/repository），这是历史占位，不代表存在未实现的空壳服务；本次整理遵循「不为目录整齐而机械分层、不新增无实际职责文件」的原则，未向这些目录填充空文件。
 
 ## 4. 后端模块职责
 
 ### 4.1 ingest：资料收录
 
-**职责**：接收文件或网页地址，提取可处理的文本，将文档元数据和文本分块保存。
+**职责**：接收文件或网页地址，提取可处理的文本，完成切分与向量化，将文档元数据和文本分块在一个数据库事务内保存。
 
-主要流程：
+统一入口为 `modules.ingest.service.ingest_service`（Issue #52）：
 
-1. 接收上传文件或 URL。
-2. 对 PDF、DOCX、TXT、Markdown 和代码文本等格式提取文本；网页收录通过 HTTP 请求获取页面并使用 BeautifulSoup 提取文本。
-3. 调用 `split_markdown` 对文本进行分块。
-4. 创建 `Document` 和关联的 `Chunk` 记录。
-5. 通过 repository 保存数据库记录；上传文件本体写入 `uploads/`。
+1. **文件上传**：先把文件写入 `uploads/.ingest_tmp` 临时目录，再解析文本；空内容直接判定失败，不留半成品。
+2. **URL 收录**：先做 http/https + hostname 基础校验，抓取网页并用 BeautifulSoup 提取文本，保存用户原始 `source_url`；空内容同样失败终止。
+3. 调用 `split_markdown` 对文本分块。
+4. 调用 `embedding_service.generate_chunk_embeddings`，其底层是 `shared.embedding.get_embedding`（唯一的 Embedding 供应商实现）；任一 chunk 向量化失败则整体收录失败。
+5. 向量成功后，把临时文件移动为 `uploads/` 下的正式文件，再在**单个数据库事务**中创建 `Document` 与 `Chunk` 并持久化。
+6. 任一阶段失败均执行补偿清理：临时文件或已落地的正式文件被安全删除，清理失败以日志留痕（路径/阶段/原因），不静默跳过。
 
-当前上传路由还能够识别常见图片和视频文件扩展名并保存文件，但代码中对应分支目前写入的是文件标记文本，并不代表已经实现 OCR 或视频语音识别。
+图片/视频为**占位实现**：仅保存原文件并生成标记文本，不参与语义检索，未实现 OCR/ASR/图像或视频理解（详见第 11 节）。批量向量化编排位于 ingest，Embedding 供应商调用只在 shared 保留一份（Issue #52 有单一实现回归测试）。
 
 ### 4.2 retrieve：知识检索
 
-**职责**：根据用户查询，从已收录的知识内容中检索相关资料。
+**职责**：根据用户查询，从已收录的知识内容中检索相关资料；只按调用方给定的访问范围检索，不负责身份来源判断。
 
-主要入口：`GET /api/v1/search`。API 层调用 `modules.retrieve.service.search.search(db, q, top_k)`。具体检索策略以 `search.py` 的当前实现为准；本文档不将尚未核实的向量检索能力列为现有功能。
+主要入口：`GET /api/v1/search`（路由位于 `modules/retrieve/controller/router.py`），调用 `modules.retrieve.service.search.search(db, q, top_k)`。当前实现为混合检索：余弦语义相似度（复用 `shared.embedding.get_embedding`）+ jieba 关键词命中，按权重合并排序；Embedding 不可用时降级为纯关键词检索。检索会排除已软删除文档的 chunk（Issue #47）。
+
+访问范围过滤（按所有者/公开范围限定检索结果）按既定约定留待 #46 处理，**当前未实现**；本次工程整理不改变 search 与 Agent 的检索行为。
 
 ### 4.3 agent：Agent 智能问答
 
@@ -160,17 +173,17 @@ personal-knowledge-base/
 
 ### 4.4 manage：资料管理
 
-**职责**：管理文档元数据、文件夹、标签、公开状态、公共广场和收藏。
+**职责**：管理文档元数据与生命周期、文件夹、标签、公开状态、公共广场和收藏。
 
-主要能力包括：
+主要能力与承载服务：
 
-- 文档列表、过滤、元数据修改和删除。
-- 文件夹创建、重命名、删除，以及文档与文件夹之间的关联。
-- 标签创建、删除、置顶，以及文档与标签之间的关联。
-- 文档/文件夹公开状态切换。
-- 公共广场、用户公开资料和收藏管理。
+- `document_service`：文档列表/过滤/元数据修改，以及完整删除生命周期（软删除、恢复、永久删除与孤立文件 write-ahead 补偿清单 `.orphan_cleanup.json`，Issue #47）。删除逻辑于 Issue #54 从 `folder_service` 迁入，使文档规则集中于文档服务。
+- `folder_service`：文件夹创建/重命名/删除、文档与文件夹关联、公开文件夹、公共广场与收藏（Issue #48/#49）。
+- `tag_service`：标签创建/删除/置顶、文档与标签关联（Issue #51）。
 
-API 路由主要定义在 `backend/api/router.py`，业务逻辑由 `modules.manage.service` 下的服务实现。
+「未删除 且 [所有者本人 或 已公开]」这一可见性口径统一由 `document_service.is_document_visible_to_user` / `visible_document_condition` 提供，供正文读取（#50）与收藏（#49）复用，避免多入口各自实现出不同版本。
+
+HTTP 路由位于 `modules/manage/controller/router.py`，仅做请求/响应适配与错误映射。
 
 ### 4.5 mistake：错题与学习管理
 
@@ -219,7 +232,8 @@ API 路由主要定义在 `backend/api/router.py`，业务逻辑由 `modules.man
 | `document_tags` | 文档与标签关联 |
 | `favorite_documents` | 用户收藏的文档 |
 | `favorite_folders` | 用户收藏的文件夹 |
-| `mistakes` | 错题、知识点、复习状态和复习记录 |
+| `mistakes` | 错题题目、知识点、复习状态、累计次数与最近复习时间 |
+| `mistake_review_records` | 每次复习生成的独立记录（Issue #53，ORM 级联随错题删除） |
 
 主要关系可概括为：
 
@@ -241,64 +255,86 @@ erDiagram
 
 `Mistake` 当前包含题目、正确答案、错误答案、错误原因、`knowledge_points`、`status`、`review_count`、`last_reviewed_at` 和创建/更新时间等字段。复习状态使用 `pending`、`reviewing`、`mastered`。
 
-文档收录时创建文本分块记录。当前上传路由创建 `Chunk` 时将 `embedding` 设置为 `None`；因此数据库中存在 embedding 字段，不代表当前流程已经完成向量生成或向量数据库检索。
+收录时由 `ingest_service` 在入库前完成向量生成：`generate_chunk_embeddings` 通过 `shared.embedding.get_embedding` 得到 1024 维向量并写入 `Chunk.embedding`，再与 `Document` 在同一事务内存库（Issue #52）。因此当前流程已落地「向量生成 + 基于向量的语义检索」，但不使用独立向量数据库或 pgvector（详见第 11 节）。历史遗留的 `embedding IS NULL` 分块由 `backfill_embeddings.py` / `reindex_service` 补全。
+
+`Mistake` 与 `MistakeReviewRecord` 的唯一正式定义在 `modules/mistake/domain/models.py`（Issue #53）；`ingest.domain.models` 仅保留兼容重导出，两者是同一 ORM 类对象，不产生第二套表映射。错题统计与推荐的详细口径见 `docs/mistake-business-rules.md`。
 
 ## 7. 模块依赖与边界
 
 ```mermaid
-flowchart LR
-    API[FastAPI API 层]
-    ING[ingest]
-    RET[retrieve]
-    AG[agent]
-    MGT[manage]
-    MIS[mistake]
+flowchart TB
+    FE[前端 React]
+    AGG[api/router.py 汇总注册]
+    CTRL[各模块 controller Router]
+    ING[ingest service]
+    RET[retrieve service]
+    AG[agent service]
+    MGT[manage service]
+    MIS[mistake service]
+    SHARED[shared: db/embedding/llm/user_context]
     DB[(SQLAlchemy / SQLite)]
 
-    API --> ING
-    API --> RET
-    API --> AG
-    API --> MGT
-    API --> MIS
+    FE --> AGG
+    AGG --> CTRL
+    CTRL --> ING
+    CTRL --> RET
+    CTRL --> AG
+    CTRL --> MGT
+    CTRL --> MIS
     ING --> DB
     RET --> DB
     MGT --> DB
     MIS --> DB
+    ING --> SHARED
+    RET --> SHARED
+    AG --> SHARED
+    CTRL --> SHARED
     AG -->|检索适配器| RET
 ```
 
-依赖原则：
+依赖原则（Issue #54 按真实边界明确）：
 
-- 前端只通过 HTTP API 访问后端，不直接访问数据库。
-- API 层负责接收请求、参数校验、依赖注入和调用业务服务。
-- Service 层承载业务规则，尽量避免在前端重复实现业务逻辑。
-- Repository/ORM 负责数据持久化；数据库 Session 由 `get_db` 依赖提供。
-- Agent 通过检索适配器和工具调用检索能力，不直接操作数据库。
-- 错题统计和推荐只处理传入 `user_id` 对应的数据。
+- **shared**：数据库会话与配置、LLM 客户端、唯一的 Embedding 供应商实现、模拟用户上下文，均为跨模块基础设施。
+- **ingest**：文件/URL 收录、解析、切分、批量向量化编排与 Document/Chunk 持久化；供应商 Embedding 调用复用 shared，不重复实现。
+- **retrieve**：关键词/语义/混合检索；只按调用方提供的范围检索，不判断身份来源；当前访问范围过滤未实现（#46）。
+- **agent**：问题改写、检索工具调用、补充检索判断与答案组织；不直接访问数据库，检索访问范围由 API 层适配器传入。
+- **manage**：文档（含删除生命周期）、文件夹、标签、收藏、公开资料；可见性规则统一在 document_service。
+- **mistake**：错题、复习记录、知识点统计、复习推荐与学习分析，模型归属本模块。
+- **api**：仅 HTTP 请求/响应适配、参数校验、依赖注入与路由汇总，不承载复杂业务规则。
 
-当前代码处于逐步模块化阶段：部分管理和收录路由仍集中在 `backend/api/router.py`，错题路由则已独立到 mistake controller。后续可以逐步统一路由分层，但不应为了文档上的形式而声称所有模块已经采用完全一致的四层架构。
+路由分层现状：Issue #54 后，业务域 Router 已分散到各模块 `controller/router.py`，`api/router.py` 只做汇总注册。本次整理不新增无实际职责的空 controller/repository/service 文件；保留的 `.gitkeep` 目录仅为历史占位。
 
 ## 8. 核心业务数据流
 
-### 8.1 文件收录流程
+### 8.1 文件收录流程（Issue #52 统一流程）
 
 ```mermaid
 sequenceDiagram
     participant U as 用户
     participant FE as React 前端
-    participant API as FastAPI
-    participant P as 文件解析与切分
-    participant DB as SQLite
+    participant API as 收录 Router
+    participant SVC as ingest_service
+    participant P as 解析与切分
+    participant EMB as shared.embedding
     participant FS as uploads 目录
+    participant DB as SQLite
 
     U->>FE: 选择并上传文件
     FE->>API: POST /api/v1/documents/upload
-    API->>FS: 保存原始文件
-    API->>P: 提取文本并切分
-    P-->>API: 文本分块列表
-    API->>DB: 保存 Document 与 Chunk
-    DB-->>API: 保存结果
+    API->>SVC: ingest_upload_file(bytes, filename, ...)
+    SVC->>FS: 写入 uploads/.ingest_tmp 临时文件
+    SVC->>P: 提取文本（空内容则失败终止）
+    P-->>SVC: 文本
+    SVC->>P: split_markdown 分块
+    P-->>SVC: 文本分块列表
+    SVC->>EMB: generate_chunk_embeddings（逐块 get_embedding）
+    EMB-->>SVC: 1024 维向量（任一失败则整体失败）
+    SVC->>FS: 临时文件移动为 uploads/ 正式文件
+    SVC->>DB: 单事务保存 Document 与 Chunk（含 embedding）
+    DB-->>SVC: 保存结果
+    SVC-->>API: 文档信息
     API-->>FE: 返回文档 ID、标题和分块数
+    Note over SVC,FS: 任一阶段失败执行补偿清理；清理失败记录 path/阶段/原因，不静默跳过
 ```
 
 ### 8.2 Agent 问答流程
@@ -364,7 +400,7 @@ flowchart TB
 | `/api/v1/mistakes/knowledge-points` | GET | 薄弱知识点统计 |
 | `/api/v1/mistakes/recommendations` | GET | 个性化复习建议 |
 
-其他文档、文件夹、收藏和公共广场接口见 `backend/api/router.py` 与 `backend/modules/mistake/controller/router.py`。
+完整接口清单以运行时的 `/docs`（OpenAPI）为准。按域划分的路由文件：收录见 `modules/ingest/controller/router.py`，检索见 `modules/retrieve/controller/router.py`，问答见 `modules/agent/controller/router.py`，文档/文件夹/标签/广场/收藏见 `modules/manage/controller/router.py`，错题见 `modules/mistake/controller/router.py`；`api/router.py` 仅汇总注册。其余文档生命周期接口包括：`/documents/{id}/content`（GET，正文，#50 可见性口径）、`/documents/{id}`（DELETE，软删除）、`/documents/{id}/restore`（POST，恢复）、`/documents/{id}/permanent`（DELETE，彻底删除）、`/square`（GET，公共广场）、`/favorites`（GET，收藏列表）。
 
 ## 10. 本地运行方式
 
@@ -404,18 +440,31 @@ backend\.venv\Scripts\python.exe -m pytest -q backend
 npm run build
 ```
 
-## 11. 当前实现边界与后续改进
+## 11. 已实现 / 未实现 / 未来设想
 
-为避免架构说明夸大现有能力，当前需要明确以下边界：
+为便于区分现状与规划，按三类列出关键能力边界。
 
-1. **认证与授权**：前端当前通过 `localStorage` 保存演示用户并在请求中传递 `user_id`。这适合本地演示和多用户数据隔离测试，但不等同于生产级登录、身份认证和服务端授权。
-2. **向量检索**：当前上传流程创建分块记录时将 `embedding` 设为 `None`。向量生成、向量数据库和 pgvector 不应描述为已经落地，除非后续实现并完成验证。
-3. **图片与视频理解**：上传接口能够保存常见图片/视频文件，但当前代码路径并未实现完整 OCR、图像理解或视频 ASR。
-4. **复习任务持久化**：智能复习建议通过现有错题和复习记录动态计算，没有独立的复习任务持久化模型。
-5. **跨模块路由分层**：当前 `api/router.py` 仍包含不少管理和收录接口，错题模块使用独立 Router。后续可以继续整理统一的 Controller/Service/Repository 边界。
-6. **生产部署配置**：当前 `main.py` 的 CORS 配置允许所有来源，属于开发阶段配置。生产部署前应限制允许的前端域名，并完善密钥管理、认证授权、日志、备份和部署配置。
-7. **学习数据统计**：可在现有错题与复习记录基础上，进一步增加学习趋势、复习频次和知识点掌握变化的可视化。
+### 11.1 已实现（代码与测试可验证）
+
+- **混合检索**：收录时通过 shared Embedding 生成向量并入库（Issue #52），检索融合余弦语义相似度与 jieba 关键词命中，Embedding 不可用时降级为关键词检索；排除已软删除文档。
+- **文档删除生命周期**：软删除 / 恢复 / 永久删除与孤立文件 write-ahead 补偿清单（Issue #47），集中在 `document_service`。
+- **模拟多用户数据隔离**：前端 `localStorage` 传 `user_id`，后端 `get_current_user` 统一校验（Issue #45）；正文（#50）、收藏（#49）、标签（#51）、文件夹（#48）、错题（#53）按已确认规则隔离。
+- **错题与学习分析**：错题/复习记录、知识点统计、趋势（UTC 口径）与规则化复习推荐，口径见 `docs/mistake-business-rules.md`（Issue #53）。
+- **按业务域拆分的路由**：各模块 controller 持有 Router，`api/router.py` 仅汇总注册（Issue #54）。
+
+### 11.2 未实现（明确不作为现有能力描述）
+
+- **检索访问范围过滤**：search / Agent 当前不按所有者或公开范围限定结果，留待 #46；本次整理未改变其业务行为。
+- **认证与授权**：`user_id` 仅为演示用模拟身份，无注册/登录/Token/Session，不构成安全边界，客户端可伪造。
+- **独立向量数据库 / pgvector**：向量存于 SQLite 的 `Chunk.embedding` 文本字段，在应用内计算相似度，未使用向量数据库。
+- **图片与视频理解**：仅保存原文件并生成占位文本，未实现 OCR、图像理解或视频 ASR。
+- **复习任务持久化**：推荐结果为动态计算，无独立复习任务表。
+
+### 11.3 未来设想（未排期，仅记录方向）
+
+- 基于现有错题与复习记录扩展学习趋势、复习频次、知识点掌握变化的可视化。
+- 生产部署前收窄 CORS、完善密钥管理与服务端授权（当前 `main.py` CORS 允许所有来源，属开发配置）。
 
 ## 12. 总结
 
-系统当前已经形成“资料收录 → 知识检索 → Agent 问答 → 错题记录 → 薄弱知识点分析 → 个性化复习建议”的主要业务闭环。后续建设应优先完善架构文档、测试和部署说明，并在明确需求后扩展学习数据统计、向量检索及多媒体内容理解能力。
+系统当前已经形成“资料收录 → 知识检索 → Agent 问答 → 错题记录 → 薄弱知识点分析 → 个性化复习建议”的主要业务闭环。Issue #54 之后，模块职责、路由分层、删除生命周期归属与文档描述进一步对齐真实代码：api 层只做适配与汇总，业务规则下沉到对应 service，跨模块共用能力集中在 shared，并区分已实现/未实现/未来设想。后续建设按第 11.3 节方向推进，具体检索范围规则等需求明确后再行处理。

@@ -1,3 +1,8 @@
+"""文件夹与资料管理服务（Issue #54 工程整理）。
+
+文档删除生命周期（软删除/恢复/永久删除及孤立文件补偿）已于 Issue #54
+迁入 modules.manage.service.document_service，本模块专注文件夹、公开资料与收藏。
+"""
 
 from sqlalchemy.orm import Session
 from sqlalchemy import select
@@ -10,7 +15,13 @@ from modules.manage.domain.models import (
 )
 from modules.ingest.domain.models import Document, User, FavoriteDocument
 from uuid import uuid4
-import os
+
+# Issue #54：复用文档服务中统一的可见性口径（#49 收藏与 #50 正文同一规则）。
+# document_service 不反向依赖本模块，无循环导入。
+from modules.manage.service.document_service import (
+    is_document_visible_to_user,
+    visible_document_condition,
+)
 
 
 def _serialize_document(db: Session, doc: Document):
@@ -57,12 +68,33 @@ def get_all_folders(db: Session, user_id: str):
     ]
 
 
-def add_doc_to_folder(db: Session, doc_id: str, folder_id: str):
+def add_doc_to_folder(db: Session, doc_id: str, folder_id: str, user_id: str):
+    """
+    添加文档到文件夹（Issue #48）：文件夹与文档均须归属当前用户。
+
+    「有权管理的文档」按严格口径：仅当前用户拥有、且未软删除的文档；
+    他人公开文档不等于可管理，不得加入自己的文件夹。只建立关联，
+    不改变文档归属、公开状态，也不触碰文档本身。
+    """
+    folder = db.query(Folder).filter(
+        Folder.id == folder_id,
+        Folder.owner_id == user_id,
+    ).first()
+    if not folder:
+        return {"error": "文件夹不存在或无权操作"}
+
+    doc = db.query(Document).filter(
+        Document.id == doc_id,
+        Document.owner_id == user_id,
+        Document.is_deleted == False,
+    ).first()
+    if not doc:
+        return {"error": "文档不存在或无权操作"}
+
     exists = db.query(DocumentFolder).filter_by(
         document_id=doc_id,
         folder_id=folder_id,
     ).first()
-
     if not exists:
         df = DocumentFolder(document_id=doc_id, folder_id=folder_id)
         db.add(df)
@@ -71,7 +103,25 @@ def add_doc_to_folder(db: Session, doc_id: str, folder_id: str):
     return {"status": "success"}
 
 
-def remove_doc_from_folder(db: Session, doc_id: str, folder_id: str):
+def remove_doc_from_folder(db: Session, doc_id: str, folder_id: str, user_id: str):
+    """
+    从文件夹移除文档（Issue #48）：同时校验文件夹与文档的归属；
+    只删除关联关系，不删除文档本身。允许清理已软删除文档的关联。
+    """
+    folder = db.query(Folder).filter(
+        Folder.id == folder_id,
+        Folder.owner_id == user_id,
+    ).first()
+    if not folder:
+        return {"error": "文件夹不存在或无权操作"}
+
+    doc = db.query(Document).filter(
+        Document.id == doc_id,
+        Document.owner_id == user_id,
+    ).first()
+    if not doc:
+        return {"error": "文档不存在或无权操作"}
+
     df = db.query(DocumentFolder).filter_by(
         document_id=doc_id,
         folder_id=folder_id,
@@ -84,56 +134,45 @@ def remove_doc_from_folder(db: Session, doc_id: str, folder_id: str):
     return {"status": "success"}
 
 
-def delete_document(db: Session, doc_id: str):
-    doc = db.query(Document).filter(Document.id == doc_id).first()
+def get_documents_in_folder(db: Session, folder_id: str, user_id: str):
+    """
+    文件夹详情（Issue #48）：
+    - 所有者：可见其中全部未软删除文档（含自身私有文档）；
+    - 非所有者：仅当文件夹公开时可见其中未软删除、且自身公开的文档；
+    - 私有文件夹对非所有者返回明确错误，杜绝通过 folder_id 直连读取。
+    """
+    folder = db.query(Folder).filter(Folder.id == folder_id).first()
+    if not folder:
+        return {"error": "文件夹不存在"}
 
-    if not doc:
-        return {"error": "文档不存在"}
+    is_owner = folder.owner_id == user_id
+    if not is_owner and not folder.is_public:
+        return {"error": "文件夹不存在或无权访问"}
 
-    if doc.source_url and doc.source_url.startswith("/uploads/"):
-        file_path = doc.source_url.replace("/uploads/", "uploads/", 1)
-        if os.path.exists(file_path):
-            try:
-                os.remove(file_path)
-            except Exception as e:
-                print(f"物理文件删除失败: {e}")
-
-    db.query(DocumentFolder).filter(
-        DocumentFolder.document_id == doc_id
-    ).delete(synchronize_session=False)
-
-    db.query(FavoriteDocument).filter(
-        FavoriteDocument.document_id == doc_id
-    ).delete(synchronize_session=False)
-
-    db.query(DocumentTag).filter(
-        DocumentTag.document_id == doc_id
-    ).delete(synchronize_session=False)
-
-    db.delete(doc)
-    db.commit()
-
-    return {"status": "success"}
-
-
-def get_documents_in_folder(db: Session, folder_id: str):
-    docs = (
+    query = (
         db.query(Document)
         .join(
             DocumentFolder,
             Document.id == DocumentFolder.document_id,
         )
-        .filter(DocumentFolder.folder_id == folder_id)
-        .all()
+        .filter(
+            DocumentFolder.folder_id == folder_id,
+            Document.is_deleted == False,
+        )
     )
+    if not is_owner:
+        query = query.filter(Document.is_public == True)
 
-    return [_serialize_document(db, doc) for doc in docs]
+    return [_serialize_document(db, doc) for doc in query.all()]
 
 
 def get_all_documents(db: Session, user_id: str):
     docs = (
         db.query(Document)
-        .filter(Document.owner_id == user_id)
+        .filter(
+            Document.owner_id == user_id,
+            Document.is_deleted == False,
+        )
         .order_by(Document.created_at.desc())
         .all()
     )
@@ -149,6 +188,7 @@ def get_uncategorized_documents(db: Session, user_id: str):
         .filter(
             ~Document.id.in_(subquery),
             Document.owner_id == user_id,
+            Document.is_deleted == False,
         )
         .order_by(Document.created_at.desc())
         .all()
@@ -178,6 +218,7 @@ def get_public_documents(
 
     query = db.query(Document).filter(
         Document.is_public == True,
+        Document.is_deleted == False,
         ~Document.id.in_(doc_ids_in_public_folders),
     )
 
@@ -223,6 +264,7 @@ def get_user_public_docs(db: Session, user_id: str):
         db.query(Document)
         .filter(
             Document.is_public == True,
+            Document.is_deleted == False,
             Document.owner_id == user_id,
         )
         .all()
@@ -243,7 +285,16 @@ def toggle_doc_visibility(
     doc_id: str,
     user_id: str,
 ):
-    doc = db.query(Document).filter(Document.id == doc_id).first()
+    """切换公开状态（Issue #47）：仅所有者、未删除文档可操作。"""
+    doc = (
+        db.query(Document)
+        .filter(
+            Document.id == doc_id,
+            Document.owner_id == user_id,
+            Document.is_deleted == False,
+        )
+        .first()
+    )
 
     if doc:
         doc.is_public = not doc.is_public
@@ -275,22 +326,9 @@ def toggle_folder_public(
     if not folder:
         return {"error": "文件夹不存在或无权限"}
 
+    # Issue #48：文件夹公开状态与文档自身 is_public 是两个独立概念。
+    # 开启/取消文件夹公开都只翻转文件夹状态，绝不批量修改文档公开设置。
     folder.is_public = not folder.is_public
-
-    if folder.is_public:
-        docs = (
-            db.query(Document)
-            .join(
-                DocumentFolder,
-                Document.id == DocumentFolder.document_id,
-            )
-            .filter(DocumentFolder.folder_id == folder_id)
-            .all()
-        )
-
-        for doc in docs:
-            doc.is_public = True
-
     db.commit()
 
     return {
@@ -329,6 +367,17 @@ def get_public_folders(db: Session, user_id: str = ""):
 
 
 def get_public_docs_in_folder(db: Session, folder_id: str):
+    """
+    公开文件夹详情（Issue #48）：文件夹须存在且公开，否则返回空列表（不泄露内容）；
+    文档仍须未软删除且自身公开，与公开入口可见性过滤保持一致。
+    """
+    folder = db.query(Folder).filter(
+        Folder.id == folder_id,
+        Folder.is_public == True,
+    ).first()
+    if not folder:
+        return []
+
     docs = (
         db.query(Document)
         .join(
@@ -338,6 +387,7 @@ def get_public_docs_in_folder(db: Session, folder_id: str):
         .filter(
             DocumentFolder.folder_id == folder_id,
             Document.is_public == True,
+            Document.is_deleted == False,
         )
         .all()
     )
@@ -358,11 +408,14 @@ def toggle_favorite_doc(
     user_id: str,
     doc_id: str,
 ):
-    doc = db.query(Document).filter(Document.id == doc_id).first()
+    """
+    切换文档收藏（Issue #49）：收藏是用户私有关系，不复制、不改所有权。
 
-    if not doc:
-        return {"error": "文档不存在"}
-
+    - 取消收藏（关系已存在）：只删关系，即使资源已软删除/不可见也允许清理，
+      以便用户主动清理无效关系；不触碰原文档。
+    - 新增收藏：必须先校验资源存在、未软删除且当前用户有权浏览
+      （自有文档或公开文档），不得仅凭 doc_id 建立关系。
+    """
     fav = db.query(FavoriteDocument).filter_by(
         user_id=user_id,
         document_id=doc_id,
@@ -372,6 +425,14 @@ def toggle_favorite_doc(
         db.delete(fav)
         db.commit()
         return {"status": "removed"}
+
+    doc = db.query(Document).filter(Document.id == doc_id).first()
+    if not doc or doc.is_deleted == True:
+        return {"error": "文档不存在"}
+
+    # Issue #54：与正文读取（#50）共用统一可见性口径（未删除 且 [所有者或公开]）。
+    if not is_document_visible_to_user(doc, user_id):
+        return {"error": "文档不存在或无权收藏"}
 
     db.add(
         FavoriteDocument(
@@ -389,11 +450,12 @@ def toggle_favorite_folder(
     user_id: str,
     folder_id: str,
 ):
-    folder = db.query(Folder).filter(Folder.id == folder_id).first()
+    """
+    切换文件夹收藏（Issue #49）：只允许收藏当前用户可浏览的文件夹。
 
-    if not folder:
-        return {"error": "文件夹不存在"}
-
+    - 取消收藏：只删关系，始终允许，便于清理无效关系；不触碰原文件夹。
+    - 新增收藏：校验文件夹存在且为自有或公开；收藏关系不改变所有者/公开状态。
+    """
     fav = db.query(FavoriteFolder).filter_by(
         user_id=user_id,
         folder_id=folder_id,
@@ -403,6 +465,13 @@ def toggle_favorite_folder(
         db.delete(fav)
         db.commit()
         return {"status": "removed"}
+
+    folder = db.query(Folder).filter(Folder.id == folder_id).first()
+    if not folder:
+        return {"error": "文件夹不存在"}
+
+    if folder.owner_id != user_id and not folder.is_public:
+        return {"error": "文件夹不存在或无权收藏"}
 
     db.add(
         FavoriteFolder(
@@ -416,13 +485,22 @@ def toggle_favorite_folder(
 
 
 def get_my_favorites(db: Session, user_id: str):
+    """
+    当前用户的收藏列表（Issue #49）：只查询自己的收藏关系，且只返回仍可访问的资源。
+
+    可见性按「隐藏」策略在查询层统一过滤（不主动删除关系，以便资源恢复公开/未删除后
+    重新可见）：文档须未软删除且为自有或公开；文件夹须为自有或公开。
+    """
     fav_docs = (
         db.query(Document)
         .join(
             FavoriteDocument,
             Document.id == FavoriteDocument.document_id,
         )
-        .filter(FavoriteDocument.user_id == user_id)
+        .filter(
+            FavoriteDocument.user_id == user_id,
+            visible_document_condition(user_id),
+        )
         .all()
     )
 
@@ -432,7 +510,10 @@ def get_my_favorites(db: Session, user_id: str):
             FavoriteFolder,
             Folder.id == FavoriteFolder.folder_id,
         )
-        .filter(FavoriteFolder.user_id == user_id)
+        .filter(
+            FavoriteFolder.user_id == user_id,
+            (Folder.owner_id == user_id) | (Folder.is_public == True),
+        )
         .all()
     )
 

@@ -28,6 +28,8 @@ class Tag(Base):
     id = Column(String, primary_key=True)
     name = Column(String, nullable=False, unique=True)
     pinned = Column(Boolean, default=False, nullable=False)
+    # Issue #51：全局共享标签的创建者。历史标签无创建者信息，允许为 NULL。
+    creator_id = Column(String, ForeignKey("users.id"), nullable=True)
 
 
 class DocumentTag(Base):

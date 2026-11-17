@@ -1,5 +1,6 @@
 
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { getCurrentUser } from '../api';
 
 type MistakeStatus = 'pending' | 'reviewing' | 'mastered';
 
@@ -35,9 +36,8 @@ function MistakeView() {
   const [message, setMessage] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
 
-  const userId = JSON.parse(
-    localStorage.getItem('currentUser') || '{"id":"u_zhangsan"}'
-  ).id || 'u_zhangsan';
+  // 统一从前端模拟用户上下文获取当前操作者（Issue #45）
+  const userId = getCurrentUser().id;
 
   // 获取错题列表
   const loadMistakes = useCallback(async () => {

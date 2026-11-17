@@ -2,7 +2,7 @@ import re
 
 from sqlalchemy.orm import Session
 
-from modules.ingest.domain.models import Mistake
+from modules.mistake.domain.models import Mistake
 
 
 def split_knowledge_points(value: str | None) -> list[str]:

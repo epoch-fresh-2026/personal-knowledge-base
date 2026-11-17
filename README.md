@@ -49,8 +49,8 @@
 ### 1. 多源知识采集
 - 支持 Markdown、PDF、Word、代码等文件上传。
 - 支持网页 URL 内容采集。
-- 支持图片、视频等资料的上传与管理。
-- 自动解析文档并进行知识切分与入库。
+- 支持图片、视频等资料的上传与管理：**当前仅保存原文件并生成占位文本**（如"【图片文件】文件名"），**尚未实现 OCR、ASR、图片理解或视频理解**，因此图片/视频内容暂不参与语义检索。
+- 自动解析文档（Markdown、PDF、Word、代码等文本类）并进行知识切分与入库；文本类文件解析为空时终止收录，不留半成品。
 
 ### 2. 智能检索与问答
 - 支持自然语言提问。
@@ -115,15 +115,15 @@
 ```text
 personal-knowledge-base/
 ├── backend/
-│   ├── api/                 # API 路由
+│   ├── api/                 # 统一 API 路由汇总（仅注册各业务域 Router）
 │   ├── migrations/          # 数据库迁移脚本
 │   ├── modules/
-│   │   ├── ingest/          # 知识采集与解析
-│   │   ├── manage/          # 知识管理
-│   │   ├── retrieve/        # 检索功能
-│   │   ├── mistake/         # 错题管理
-│   │   └── ...              # 其他业务模块
-│   ├── shared/              # 数据库及公共配置
+│   │   ├── ingest/          # 知识采集与解析（含收录 Router）
+│   │   ├── manage/          # 文档/文件夹/标签/收藏管理（含管理 Router）
+│   │   ├── retrieve/        # 检索功能（含检索 Router）
+│   │   ├── agent/           # 智能问答工作流（含问答 Router）
+│   │   └── mistake/         # 错题管理（独立 Router）
+│   ├── shared/              # 数据库、配置、Embedding、LLM、用户上下文等公共能力
 │   ├── tests/               # 自动化测试
 │   ├── uploads/             # 上传文件
 │   ├── main.py              # 后端入口
@@ -219,6 +219,17 @@ npm run dev
 
 http://localhost:5173
 
+### 模拟用户切换说明
+
+本项目提供"张三 / 李四"两个模拟用户，用于演示个人数据的归属与隔离。左下角下拉框可切换当前用户。
+
+- 首次访问时，前端默认选中张三；选择会保存在浏览器 `localStorage` 的 `currentUser` 中。
+- 前端统一通过 `getCurrentUser()` 读取当前用户；当本地数据无法解析、结构不完整或不在允许名单中时，会安全回退到张三。
+- 前端在发起个人数据请求时，通过 `user_id` 查询参数把当前操作者传给后端。
+- 后端通过统一的 `get_current_user` 依赖接收并校验 `user_id`：缺少参数返回 422，格式错误返回 400，用户不存在返回 404。
+
+**这不是真实身份认证**：项目没有注册、登录、密码、Token 或 Session，上述 `user_id` 仅用于本项目的模拟数据隔离，不构成安全边界，客户端仍可自行伪造该参数。作者主页路径中的 `author_id` 表示被查看的目标作者，与当前操作者是两个不同概念。
+
 ## 八、测试与构建
 
 ### 后端自动化测试
@@ -249,6 +260,9 @@ npm run build
 
 - [产品需求文档（Issue #1）](https://github.com/epoch-fresh-2026/personal-knowledge-base/issues/1)
 - [系统架构设计文档（Issue #2）](https://github.com/epoch-fresh-2026/personal-knowledge-base/issues/2)
+- [系统架构与模块设计（docs/architecture.md）](docs/architecture.md)
+- [用户故事与验收场景（docs/user-stories.md）](docs/user-stories.md)
+- [错题业务规则（docs/mistake-business-rules.md）](docs/mistake-business-rules.md)
 
 ## 十一、项目许可证
 
@@ -292,7 +306,5 @@ npm run build
 
 本项目的实际价值在于减少学习资料整理和查找过程中的重复操作，并将个人知识资料与错题、知识点分析及复习建议结合起来，为日常学习和考前复习提供统一的辅助工具。
 
-<<<<<<< HEAD
 需要说明的是，系统提供的检索结果、问答内容和复习建议属于学习辅助信息，用户仍应结合原始资料进行核对。系统是否能够实际提升学习效率，还需要通过真实用户试用、任务完成时间、检索准确性和复习效果等指标进一步评估。
-=======
 

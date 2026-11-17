@@ -30,6 +30,9 @@ def init_db():
     # 导入模型，让 Base 知道有哪些表
     from modules.ingest.domain import models
     from modules.manage.domain import models as manage_models
+    # Issue #53：错题模型的唯一正式定义在 mistake.domain.models，
+    # ingest 侧仅保留兼容重导出；此处显式注册以保证建表完整、依赖清晰。
+    from modules.mistake.domain import models as mistake_models
     from modules.ingest.domain.models import User
 
     Base.metadata.create_all(bind=engine)

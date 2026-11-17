@@ -2,7 +2,7 @@ from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
-from modules.ingest.domain.models import Mistake, MistakeReviewRecord
+from modules.mistake.domain.models import Mistake, MistakeReviewRecord
 from modules.mistake.service.knowledge_point_service import (
     get_knowledge_point_statistics,
 )

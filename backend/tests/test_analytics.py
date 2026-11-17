@@ -7,8 +7,8 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from shared.db import Base
-from modules.ingest.domain.models import (
-    User,
+from modules.ingest.domain.models import User
+from modules.mistake.domain.models import (
     Mistake,
     MistakeReviewRecord,
 )

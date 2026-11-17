@@ -6,7 +6,9 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from shared.db import get_db
-from modules.ingest.domain.models import Mistake, MistakeReviewRecord
+from shared.user_context import get_current_user
+from modules.ingest.domain.models import User
+from modules.mistake.domain.models import Mistake, MistakeReviewRecord
 
 from modules.mistake.service.recommendation_service import (
     get_review_recommendations
@@ -56,12 +58,12 @@ class MistakeStatusUpdate(BaseModel):
 @router.post("")
 def create_mistake(
     req: MistakeCreate,
-    user_id: str = Query("u_zhangsan"),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     mistake = Mistake(
         id=str(uuid4()),
-        user_id=user_id,
+        user_id=current_user.id,
         question=req.question,
         correct_answer=req.correct_answer,
         wrong_answer=req.wrong_answer,
@@ -84,12 +86,12 @@ def create_mistake(
 
 @router.get("")
 def list_mistakes(
-    user_id: str = Query("u_zhangsan"),
+    current_user: User = Depends(get_current_user),
     status: str = Query(None),
     db: Session = Depends(get_db),
 ):
     mistakes_query = db.query(Mistake).filter(
-        Mistake.user_id == user_id
+        Mistake.user_id == current_user.id
     )
 
     if status:
@@ -133,14 +135,14 @@ def list_mistakes(
 def update_mistake(
     mistake_id: str,
     req: MistakeUpdate,
-    user_id: str = Query("u_zhangsan"),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     mistake = (
         db.query(Mistake)
         .filter(
             Mistake.id == mistake_id,
-            Mistake.user_id == user_id,
+            Mistake.user_id == current_user.id,
         )
         .first()
     )
@@ -166,14 +168,14 @@ def update_mistake(
 @router.delete("/{mistake_id}")
 def delete_mistake(
     mistake_id: str,
-    user_id: str = Query("u_zhangsan"),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     mistake = (
         db.query(Mistake)
         .filter(
             Mistake.id == mistake_id,
-            Mistake.user_id == user_id,
+            Mistake.user_id == current_user.id,
         )
         .first()
     )
@@ -196,7 +198,7 @@ def delete_mistake(
 def update_mistake_status(
     mistake_id: str,
     req: MistakeStatusUpdate,
-    user_id: str = Query("u_zhangsan"),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     if req.status not in ("pending", "reviewing", "mastered"):
@@ -206,7 +208,7 @@ def update_mistake_status(
         db.query(Mistake)
         .filter(
             Mistake.id == mistake_id,
-            Mistake.user_id == user_id,
+            Mistake.user_id == current_user.id,
         )
         .first()
     )
@@ -232,7 +234,7 @@ def update_mistake_status(
 def complete_mistake_review(
     mistake_id: str,
     req: MistakeReviewComplete,
-    user_id: str = Query("u_zhangsan"),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     if req.status not in ("pending", "reviewing", "mastered"):
@@ -242,7 +244,7 @@ def complete_mistake_review(
         db.query(Mistake)
         .filter(
             Mistake.id == mistake_id,
-            Mistake.user_id == user_id,
+            Mistake.user_id == current_user.id,
         )
         .first()
     )
@@ -262,7 +264,7 @@ def complete_mistake_review(
     review_record = MistakeReviewRecord(
         id=str(uuid4()),
         mistake_id=mistake.id,
-        user_id=user_id,
+        user_id=current_user.id,
         status=req.status,
         reviewed_at=reviewed_at,
     )
@@ -290,20 +292,20 @@ def complete_mistake_review(
 
 @router.get("/knowledge-points")
 def list_knowledge_point_statistics(
-    user_id: str = Query("u_zhangsan"),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """
     获取当前用户的知识点掌握情况统计。
     """
-    return get_knowledge_point_statistics(db, user_id)
+    return get_knowledge_point_statistics(db, current_user.id)
 
 
 # ==================== 个性化智能复习建议 ====================
 
 @router.get("/recommendations")
 def list_review_recommendations(
-    user_id: str = Query("u_zhangsan"),
+    current_user: User = Depends(get_current_user),
     limit: int = Query(10, ge=1, le=50),
     db: Session = Depends(get_db),
 ):
@@ -312,7 +314,7 @@ def list_review_recommendations(
     """
     return get_review_recommendations(
         db,
-        user_id,
+        current_user.id,
         limit
     )
 
@@ -321,7 +323,7 @@ def list_review_recommendations(
 
 @router.get("/analytics/overview")
 def learning_analytics_overview(
-    user_id: str = Query("u_zhangsan"),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """
@@ -329,13 +331,13 @@ def learning_analytics_overview(
     """
     return get_learning_overview(
         db,
-        user_id,
+        current_user.id,
     )
 
 
 @router.get("/analytics/trends")
 def learning_analytics_trends(
-    user_id: str = Query("u_zhangsan"),
+    current_user: User = Depends(get_current_user),
     days: int = Query(30, ge=7, le=365),
     granularity: str = Query("day"),
     db: Session = Depends(get_db),
@@ -346,7 +348,7 @@ def learning_analytics_trends(
     try:
         return get_learning_trends(
             db,
-            user_id,
+            current_user.id,
             days,
             granularity,
         )

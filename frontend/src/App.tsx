@@ -9,7 +9,7 @@ import MistakeView from './components/MistakeView';
 import KnowledgePointView from './components/KnowledgePointView';
 import ReviewRecommendationView from './components/ReviewRecommendationView';
 import LearningAnalyticsView from './components/LearningAnalyticsView';
-import { getCurrentUser } from './api';
+import { getCurrentUser, MOCK_USERS } from './api';
 
 type Tab =
   | 'chat'
@@ -29,10 +29,9 @@ function App() {
   const [viewingUserId, setViewingUserId] = useState('');
 
   const handleSwitchUser = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const user =
-      e.target.value === 'zhangsan'
-        ? { id: 'u_zhangsan', name: '张三', avatar: '🧑‍💻' }
-        : { id: 'u_lisi', name: '李四', avatar: '👩‍💻' };
+    // 从统一允许名单取目标用户；未知值回退到默认用户（Issue #45）
+    const userId = e.target.value === 'lisi' ? 'u_lisi' : 'u_zhangsan';
+    const user = MOCK_USERS[userId];
 
     localStorage.setItem('currentUser', JSON.stringify(user));
     setCurrentUser(user);
