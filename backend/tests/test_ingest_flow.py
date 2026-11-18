@@ -135,6 +135,77 @@ def test_upload_video_placeholder_success(ctx):
     _dirs_empty(temp_dir)
 
 
+# ---------- 文件名路径穿越防护 ----------
+
+@pytest.mark.parametrize("evil_name", [
+    "../../escape.md",
+    "..\\escape.txt",
+    "nested/evil.md",
+    "C:\\evil\\note.md",
+])
+def test_upload_traversal_filename_is_sanitized_inside_dirs(ctx, evil_name):
+    """目录成分被剥离；文件仍落在临时/正式目录内，标题保留原始文件名。"""
+    client, db, upload_dir, temp_dir = ctx
+    base = evil_name.replace("\\", "/").rsplit("/", 1)[-1]
+    resp = _upload(client, evil_name, "# 标题\n\n正文内容".encode("utf-8"))
+    assert resp.status_code == 200, resp.text
+
+    doc = db.query(Document).first()
+    assert doc is not None
+    # 服务仍按收到的文件名设置标题；multipart 框架可能先剥离盘符路径。
+    assert doc.title in {evil_name, base}
+
+    stored_name = doc.source_url[len("/uploads/"):]
+    assert "/" not in stored_name and "\\" not in stored_name
+    assert ".." not in stored_name
+    assert (upload_dir / stored_name).exists()
+    _dirs_empty(temp_dir)
+
+    assert not (upload_dir.parent / base).exists(), "不得在正式目录之外留下文件"
+
+
+@pytest.mark.parametrize("bad_name", ["..", ".", "   "])
+def test_upload_dot_or_blank_filename_rejected(ctx, bad_name):
+    client, db, upload_dir, temp_dir = ctx
+    resp = _upload(client, bad_name, b"content")
+    assert resp.status_code == 400
+    assert "文件名" in resp.json()["detail"]
+    _no_docs(db)
+    _dirs_empty(upload_dir, temp_dir)
+
+
+def test_inside_directory_rejects_traversal_for_both_roots(ctx):
+    """防御纵深：即便上游返回越界名称，两条目标路径也必须被拒绝。"""
+    client, db, upload_dir, temp_dir = ctx
+    for root in (str(temp_dir), str(upload_dir)):
+        with pytest.raises(ingest_service.IngestError, match="越界"):
+            ingest_service._inside_directory(root, "../evil.md")
+
+
+def test_safe_upload_name_rejects_nul_character():
+    """纯函数校验：NUL 文件名直接拒绝，不访问数据库或上传目录。"""
+    with pytest.raises(ingest_service.IngestError, match="文件名"):
+        ingest_service._safe_upload_name("a\x00b.md")
+
+
+def test_inside_directory_rejects_symlink_escape(tmp_path):
+    """根目录内符号链接指向外部文件时，realpath 校验必须拒绝。"""
+    root_dir = tmp_path / "root"
+    root_dir.mkdir()
+    outside = tmp_path / "outside.md"
+    outside.write_text("外部目标文件", encoding="utf-8")
+
+    symlink_name = "escape.md"
+    link = root_dir / symlink_name
+    try:
+        link.symlink_to(outside)
+    except (OSError, NotImplementedError) as e:
+        pytest.skip(f"当前环境不支持创建符号链接：{e}")
+
+    with pytest.raises(ingest_service.IngestError, match="越界"):
+        ingest_service._inside_directory(str(root_dir), symlink_name)
+
+
 # ---------- 文件上传：失败路径 ----------
 
 def test_upload_pdf_parse_failure_cleans_all(ctx, monkeypatch):

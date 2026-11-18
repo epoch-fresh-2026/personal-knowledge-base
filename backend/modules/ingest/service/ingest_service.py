@@ -79,6 +79,30 @@ def _safe_remove(path: str, stage: str) -> None:
         )
 
 
+def _safe_upload_name(original_filename: str) -> str:
+    """将用户文件名收敛为纯文件名，剔除 POSIX / Windows 目录成分。"""
+    if not isinstance(original_filename, str) or not original_filename.strip():
+        raise IngestError("文件名不能为空", 400)
+    # 统一分隔符后只保留最后一段，杜绝 ../、..\ 等目录穿越写法。
+    base = original_filename.replace("\\", "/").rsplit("/", 1)[-1]
+    if not base or base in (".", "..") or "\x00" in base:
+        raise IngestError("文件名不合法", 400)
+    return base
+
+
+def _inside_directory(directory: str, name: str) -> str:
+    """构造目标路径并验证其真实位置位于 directory 内，拒绝任何越界。"""
+    root = os.path.realpath(directory)
+    candidate = os.path.realpath(os.path.join(root, name))
+    try:
+        if os.path.commonpath([root, candidate]) != root:
+            raise IngestError("文件名不合法：目标路径越界", 400)
+    except ValueError as e:
+        # Windows 上不同盘符的 commonpath 会抛 ValueError，同样视为越界。
+        raise IngestError("文件名不合法：目标路径越界", 400) from e
+    return candidate
+
+
 def _parse_uploaded_file(file_path: str, filename: str) -> tuple[str, str, bool]:
     """解析本地临时文件。
 
@@ -155,11 +179,12 @@ async def ingest_upload_file(
     user_id: str,
 ) -> dict:
     """文件收录：临时文件 → 解析 → 切分 → Embedding → 转正式 → 单事务保存。"""
+    safe_filename = _safe_upload_name(original_filename)
     doc_id = str(uuid4())
-    unique_filename = f"{uuid4()}_{original_filename}"
+    unique_filename = f"{uuid4()}_{safe_filename}"
     os.makedirs(TEMP_DIR, exist_ok=True)
-    tmp_path = os.path.join(TEMP_DIR, unique_filename)
-    final_path = os.path.join(UPLOAD_DIR, unique_filename)
+    tmp_path = _inside_directory(TEMP_DIR, unique_filename)
+    final_path = _inside_directory(UPLOAD_DIR, unique_filename)
 
     moved = False
     committed = False
