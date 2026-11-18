@@ -10,3 +10,4 @@ numpy
 python-multipart
 jieba
 python-dotenv
+python-docx

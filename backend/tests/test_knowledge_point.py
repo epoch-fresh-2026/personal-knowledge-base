@@ -5,7 +5,8 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from shared.db import Base
-from modules.ingest.domain.models import User, Mistake
+from modules.ingest.domain.models import User
+from modules.mistake.domain.models import Mistake
 from modules.mistake.service.knowledge_point_service import (
     split_knowledge_points,
     get_knowledge_point_statistics,

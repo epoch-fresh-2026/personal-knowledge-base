@@ -147,3 +147,67 @@ def test_search_empty_query():
 
     assert result["keywords"] == []
     assert result["results"] == []
+
+
+def test_semantic_search_excludes_soft_deleted_document(monkeypatch):
+    """语义检索路径必须排除已软删除文档的 Chunk（Issue #47 规则 C）。
+
+    使用真实内存 SQLite + relationship `has()` 过滤，不再使用
+    ``filter()`` 无条件返回全部 Chunk 的 FakeDB，确保 search.py 中
+    ``Chunk.document.has(Document.is_deleted == False)`` 真正执行。
+    检索范围（owner/public）本 Issue 不引入，仍留待 #46。
+    """
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.pool import StaticPool
+
+    from shared.db import Base
+    from modules.ingest.domain.models import User, Document, Chunk
+
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(bind=engine)
+    TestingSession = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+    db = TestingSession()
+
+    db.add(User(id="u_owner", nickname="所有者"))
+    db.add(Document(id="doc_active", title="正常文档", source_type="text",
+                    owner_id="u_owner", is_deleted=False, is_public=False))
+    db.add(Document(id="doc_deleted", title="已删除文档", source_type="text",
+                    owner_id="u_owner", is_deleted=True, is_public=True))
+    db.add_all([
+        Chunk(id="c_active", document_id="doc_active", content="知识库内容甲",
+              embedding=json.dumps([1.0, 0.0]), chunk_index=0),
+        Chunk(id="c_deleted", document_id="doc_deleted", content="知识库内容乙",
+              embedding=json.dumps([1.0, 0.0]), chunk_index=0),
+    ])
+    db.commit()
+
+    # 关键词路径置空，让结果只能来自语义路径，从而精确验证语义分支的软删除过滤。
+    monkeypatch.setattr(
+        search_service.chunk_repo,
+        "search_by_keywords",
+        lambda db, keywords, top_k=5: [],
+    )
+
+    async def fake_get_embedding(text):
+        return [1.0, 0.0]
+
+    monkeypatch.setattr(search_service, "get_embedding", fake_get_embedding)
+
+    result = asyncio.run(
+        search_service.search(db, "知识库检索", top_k=10)
+    )
+
+    chunk_ids = {item["chunk_id"] for item in result["results"]}
+    doc_ids = {item["document_id"] for item in result["results"]}
+    # 正常文档的 Chunk 可被语义检索到
+    assert "c_active" in chunk_ids
+    assert "doc_active" in doc_ids
+    # 软删除文档的 Chunk 必须被 has(is_deleted == False) 过滤掉
+    assert "c_deleted" not in chunk_ids
+    assert "doc_deleted" not in doc_ids
+    db.close()

@@ -6,22 +6,36 @@ from modules.manage.domain.models import Tag, DocumentTag
 from modules.ingest.domain.models import Document
 
 
-def create_tag(db: Session, name: str):
-    """创建标签"""
-    name = name.strip()
+def _normalize_name(name: str) -> str:
+    """标签名称规范化：去首尾空白 + 统一大小写（casefold），用于唯一性比较。"""
+    return (name or "").strip().casefold()
+
+
+def create_tag(db: Session, name: str, user_id: str):
+    """创建全局共享标签（Issue #51 规则 B）。
+
+    名称非空、规范化后全局唯一；记录创建者。所有用户可使用已有标签，
+    但只有创建者日后可删除。
+    """
+    name = (name or "").strip()
 
     if not name:
         raise ValueError("标签名称不能为空")
 
-    existing_tag = db.query(Tag).filter(Tag.name == name).first()
-
-    if existing_tag:
+    normalized = _normalize_name(name)
+    # 规范化后全局唯一：在 Python 层比较，兼容大小写/空白差异
+    existing = [
+        t for t in db.query(Tag).all()
+        if _normalize_name(t.name) == normalized
+    ]
+    if existing:
         raise ValueError("标签已存在")
 
     tag = Tag(
         id=str(uuid.uuid4()),
         name=name,
-        pinned=False
+        pinned=False,
+        creator_id=user_id,
     )
 
     db.add(tag)
@@ -32,20 +46,30 @@ def create_tag(db: Session, name: str):
 
 
 def get_all_tags(db: Session):
-    """获取所有标签"""
-    return db.query(Tag).order_by(Tag.name.asc()).all()
+    """获取所有全局共享标签（置顶为全局状态，所有用户结果一致）。"""
+    return db.query(Tag).order_by(Tag.pinned.desc(), Tag.name.asc()).all()
 
-def delete_tag(db: Session, tag_id: str):
-    """删除标签"""
+
+def delete_tag(db: Session, tag_id: str, user_id: str):
+    """删除标签（Issue #51 原文规则）：仅创建者可删除；仍有关联时禁止删除。
+
+    全局共享标签：创建者可删除标签，但删除前必须确认没有文档仍在使用它；
+    仍有关联则拒绝并提示先解除关联，不静默删除任何文档关联。
+    非创建者（含历史 creator_id 为 NULL 的标签）一律拒绝，且不改动任何数据。
+    """
     tag = db.query(Tag).filter(Tag.id == tag_id).first()
 
     if not tag:
         raise ValueError("标签不存在")
 
-    # 先删除标签与文档的关联
-    db.query(DocumentTag).filter(
+    if tag.creator_id is None or tag.creator_id != user_id:
+        raise ValueError("只有标签创建者可以删除标签")
+
+    in_use = db.query(DocumentTag).filter(
         DocumentTag.tag_id == tag_id
-    ).delete(synchronize_session=False)
+    ).first()
+    if in_use:
+        raise ValueError("标签仍有关联文档，请先解除关联后再删除")
 
     db.delete(tag)
     db.commit()
@@ -54,7 +78,7 @@ def delete_tag(db: Session, tag_id: str):
 
 
 def pin_tag(db: Session, tag_id: str):
-    """切换标签置顶状态"""
+    """切换标签置顶状态：修改全局状态，所有用户看到一致结果。"""
     tag = db.query(Tag).filter(Tag.id == tag_id).first()
 
     if not tag:
@@ -67,14 +91,19 @@ def pin_tag(db: Session, tag_id: str):
 
     return tag
 
-def add_tag_to_doc(db: Session, doc_id: str, tag_id: str):
-    """给文档添加标签"""
+
+def add_tag_to_doc(db: Session, doc_id: str, tag_id: str, user_id: str):
+    """给文档添加标签（Issue #51）：校验当前用户对文档的管理权限（文档所有者）。"""
     document = db.query(Document).filter(
-        Document.id == doc_id
+        Document.id == doc_id,
+        Document.is_deleted == False,
     ).first()
 
     if not document:
         raise ValueError("文档不存在")
+
+    if document.owner_id != user_id:
+        raise ValueError("无权管理该文档")
 
     tag = db.query(Tag).filter(Tag.id == tag_id).first()
 
@@ -100,8 +129,19 @@ def add_tag_to_doc(db: Session, doc_id: str, tag_id: str):
     return {"message": "标签添加成功"}
 
 
-def remove_tag_from_doc(db: Session, doc_id: str, tag_id: str):
-    """移除文档标签"""
+def remove_tag_from_doc(db: Session, doc_id: str, tag_id: str, user_id: str):
+    """移除文档标签（Issue #51）：校验当前用户对文档的管理权限。"""
+    document = db.query(Document).filter(
+        Document.id == doc_id,
+        Document.is_deleted == False,
+    ).first()
+
+    if not document:
+        raise ValueError("文档不存在")
+
+    if document.owner_id != user_id:
+        raise ValueError("无权管理该文档")
+
     relation = db.query(DocumentTag).filter(
         DocumentTag.document_id == doc_id,
         DocumentTag.tag_id == tag_id
@@ -115,8 +155,13 @@ def remove_tag_from_doc(db: Session, doc_id: str, tag_id: str):
 
     return {"message": "标签移除成功"}
 
-def list_documents_by_tag(db: Session, tag_name: str):
-    """根据标签名称查询文档"""
+
+def list_documents_by_tag(db: Session, tag_name: str, user_id: str):
+    """根据标签名称查询文档（Issue #51）。
+
+    只返回当前用户可访问的文档：自己拥有的文档，或已公开的文档；
+    并排除已软删除文档。标签是全局的，但文档可见范围按当前用户过滤。
+    """
     tag = db.query(Tag).filter(
         Tag.name == tag_name
     ).first()
@@ -130,7 +175,11 @@ def list_documents_by_tag(db: Session, tag_name: str):
             DocumentTag,
             Document.id == DocumentTag.document_id
         )
-        .filter(DocumentTag.tag_id == tag.id)
+        .filter(
+            DocumentTag.tag_id == tag.id,
+            Document.is_deleted == False,
+            (Document.owner_id == user_id) | (Document.is_public == True),
+        )
         .all()
     )
 
