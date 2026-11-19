@@ -231,7 +231,7 @@ def test_soft_deleted_chunk_excluded_from_keyword_search(ctx):
     engine_db = None
     # ctx 内的 db 是 Session，直接传给 repo
     client, db = ctx
-    results = chunk_repo.search_by_keywords(db, ["知识库"], top_k=10)
+    results = chunk_repo.search_by_keywords(db, ["知识库"], user_id="u_zhangsan", top_k=10)
     ids = {c.id for c in results}
     # c3 属于已删除文档，必须被排除；c1 属于活跃文档
     assert "c3" not in ids

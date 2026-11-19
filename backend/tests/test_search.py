@@ -53,7 +53,7 @@ def test_search_keyword_fallback(monkeypatch):
     monkeypatch.setattr(
         search_service.chunk_repo,
         "search_by_keywords",
-        lambda db, keywords, top_k=5: [chunk]
+        lambda db, keywords, user_id=None, top_k=5: [chunk]
     )
 
     async def fake_get_embedding(text):
@@ -69,6 +69,7 @@ def test_search_keyword_fallback(monkeypatch):
         search_service.search(
             db=None,
             query="个人知识库检索",
+            user_id="u_test",
             top_k=5
         )
     )
@@ -94,7 +95,7 @@ def test_search_semantic_retrieval(monkeypatch):
     monkeypatch.setattr(
         search_service.chunk_repo,
         "search_by_keywords",
-        lambda db, keywords, top_k=5: []
+        lambda db, keywords, user_id=None, top_k=5: []
     )
 
     async def fake_get_embedding(text):
@@ -121,6 +122,7 @@ def test_search_semantic_retrieval(monkeypatch):
         search_service.search(
             db=FakeDB(),
             query="缓存如何管理数据",
+            user_id="u_test",
             top_k=5
         )
     )
@@ -141,6 +143,7 @@ def test_search_empty_query():
         search_service.search(
             db=None,
             query="   ",
+            user_id="u_test",
             top_k=5
         )
     )
@@ -190,7 +193,7 @@ def test_semantic_search_excludes_soft_deleted_document(monkeypatch):
     monkeypatch.setattr(
         search_service.chunk_repo,
         "search_by_keywords",
-        lambda db, keywords, top_k=5: [],
+        lambda db, keywords, user_id=None, top_k=5: [],
     )
 
     async def fake_get_embedding(text):
@@ -199,7 +202,7 @@ def test_semantic_search_excludes_soft_deleted_document(monkeypatch):
     monkeypatch.setattr(search_service, "get_embedding", fake_get_embedding)
 
     result = asyncio.run(
-        search_service.search(db, "知识库检索", top_k=10)
+        search_service.search(db, "知识库检索", user_id="u_owner", top_k=10)
     )
 
     chunk_ids = {item["chunk_id"] for item in result["results"]}
