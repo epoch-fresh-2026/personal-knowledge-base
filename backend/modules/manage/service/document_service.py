@@ -11,11 +11,29 @@ import json
 import os
 from datetime import datetime
 
-from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
 from modules.ingest.domain.models import Document, FavoriteDocument, Chunk
 from modules.manage.domain.models import DocumentFolder, DocumentTag
+
+# Issue #46：可见性规则上移到 shared 层，供 retrieve / manage 共同复用。
+# 此处 re-export 同名符号，folder_service 与 manage router 仍从本模块导入，
+# 保持与 #54「单一定义」断言一致的同一函数对象。
+from shared.document_visibility import (
+    is_document_visible_to_user,
+    require_user_id,
+    visible_document_condition,
+)
+
+__all__ = [
+    "is_document_visible_to_user",
+    "visible_document_condition",
+    "list_documents",
+    "update_document_meta",
+    "delete_document",
+    "restore_document",
+    "permanent_delete_document",
+]
 
 
 # ==================== 文档归属与元信息 ====================
@@ -91,41 +109,22 @@ async def update_document_meta(db: Session, doc_id: str, user_id: str, **kwargs)
         raise
 
 
-def is_document_visible_to_user(doc: Document | None, user_id: str) -> bool:
+def list_documents(db: Session, filters: dict | None = None, user_id: str | None = None):
     """
-    统一的「文档可见性」判定（Issue #49 / #50 共用口径，Issue #54 整理）：
+    根据筛选条件获取文档列表（Issue #47 排除已删除；Issue #46 应用可见范围）。
 
-    文档未软删除，且满足以下之一：
-    - 当前用户是文档所有者；
-    - 文档已公开。
+    Issue #46：查询恒定为「当前用户可见集合」——本人文档（含私有）+ 他人公开文档，
+    排除他人私有与所有软删除文档。filters 中的 owner_id 仅作为该可见集合内的
+    进一步筛选：传入他人 owner_id 时只能得到其公开文档，无法越权取到私有文档。
 
-    将该复合规则收敛到单一函数，避免正文读取（#50）与收藏新增（#49）
-    各自实现出不同版本。此函数只判定规则，不改变调用方的错误响应契约。
+    fail-closed（最终验收）：缺少有效 user_id 时直接拒绝，不再退化为仅排除软删
+    的全局查询。所有 HTTP 调用入口均经 get_current_user 注入有效用户 ID。
     """
-    if doc is None:
-        return False
-    return (
-        doc.is_deleted == False
-        and (doc.owner_id == user_id or doc.is_public == True)
-    )
+    # fail-closed：无效用户上下文直接拒绝，绝不返回全局数据。
+    user_id = require_user_id(user_id)
 
-
-def visible_document_condition(user_id: str):
-    """
-    与上规则等价的 SQLAlchemy 查询条件（Issue #54 整理）：
-    供列表类查询（如收藏列表）在数据库层复用同一可见性口径，
-    避免各入口各写一份 is_deleted / owner / is_public 组合。
-    """
-    return and_(
-        Document.is_deleted == False,
-        or_(Document.owner_id == user_id, Document.is_public == True),
-    )
-
-
-def list_documents(db: Session, filters: dict | None = None):
-    """根据筛选条件获取文档列表（排除已删除文档，Issue #47）。"""
     filters = filters or {}
-    query = db.query(Document).filter(Document.is_deleted == False)
+    query = db.query(Document).filter(visible_document_condition(user_id))
 
     owner_id = filters.get("owner_id")
     if owner_id:

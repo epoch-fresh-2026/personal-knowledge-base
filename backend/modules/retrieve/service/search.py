@@ -5,8 +5,9 @@ import re
 import jieba
 from sqlalchemy.orm import Session
 
-from modules.ingest.domain.models import Chunk, Document
+from modules.ingest.domain.models import Chunk
 from modules.retrieve.repository import chunk_repo
+from shared.document_visibility import require_user_id, visible_document_condition
 from shared.embedding import get_embedding
 
 
@@ -60,9 +61,21 @@ def cosine_similarity(
 async def search(
     db: Session,
     query: str,
+    user_id: str | None = None,
     top_k: int = 5
 ) -> dict:
-    """结合语义检索和关键词检索的混合检索。"""
+    """
+    结合语义检索和关键词检索的混合检索。
+
+    Issue #46：user_id 为当前浏览者，所有检索路径统一限定在其可见文档集合
+    （本人含私有 + 他人公开；排除他人私有与软删除）。
+
+    fail-closed（最终验收）：缺少有效 user_id 时在函数入口直接拒绝，不以
+    user_id=None 退化为仅排除软删的全局查询。所有 HTTP 入口均经 get_current_user
+    注入有效用户 ID。
+    """
+    # fail-closed：无效用户上下文在任何查询/降级逻辑之前直接拒绝。
+    user_id = require_user_id(user_id)
 
     if not query or not query.strip():
         return {
@@ -73,9 +86,14 @@ async def search(
 
     keywords = tokenize(query)
 
+    # 文档级可见条件（本人含私有 + 他人公开，排除软删除）。
+    doc_condition = visible_document_condition(user_id)
+
     # 1. 关键词检索
     keyword_chunks = (
-        chunk_repo.search_by_keywords(db, keywords, top_k=top_k * 3)
+        chunk_repo.search_by_keywords(
+            db, keywords, user_id=user_id, top_k=top_k * 3
+        )
         if keywords else []
     )
 
@@ -85,13 +103,13 @@ async def search(
     try:
         query_vector = await get_embedding(query)
 
-        # 排除已删除文档的 chunks（Issue #47 规则 C）。
+        # 文档级可见范围（Issue #46 统一口径，含 Issue #47 的软删除排除）。
         # 用 relationship has() 生成 EXISTS 过滤，保持调用链不变。
         chunks = (
             db.query(Chunk)
             .filter(
                 Chunk.embedding.isnot(None),
-                Chunk.document.has(Document.is_deleted == False),
+                Chunk.document.has(doc_condition),
             )
             .all()
         )
@@ -140,9 +158,13 @@ async def search(
         candidate_chunks[chunk.id] = chunk
 
     if semantic_scores:
+        # Issue #46：即便候选 id 已过滤，回查仍显式叠加可见条件（纵深防御）。
         semantic_chunks = (
             db.query(Chunk)
-            .filter(Chunk.id.in_(semantic_scores.keys()))
+            .filter(
+                Chunk.id.in_(semantic_scores.keys()),
+                Chunk.document.has(doc_condition),
+            )
             .all()
         )
 

@@ -38,9 +38,12 @@ async def agent_chat_endpoint(
         query: str,
         requested_top_k: int
     ) -> dict:
+        # Issue #46：所有检索轮次（原始问题/改写/二次检索）共用此适配器，
+        # 统一注入当前用户上下文，确保任一 Agent 步骤都无法绕过访问范围。
         return await search(
             db,
             query,
+            user_id=current_user.id,
             top_k=requested_top_k
         )
 

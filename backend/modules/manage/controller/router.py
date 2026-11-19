@@ -154,7 +154,9 @@ async def filter_documents(
         "is_public": is_public
     }
 
-    return list_documents(db, filters)
+    # Issue #46：current_user 真正参与范围判断；owner_id 仅作为可见集合内的
+    # 进一步筛选，篡改它也无法取得他人私有文档。响应结构保持不变。
+    return list_documents(db, filters, user_id=current_user.id)
 
 
 @router.put("/documents/{doc_id}/meta")
