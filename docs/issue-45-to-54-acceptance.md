@@ -5,11 +5,13 @@
 > 项目目录：`D:\STUDY\echo\personal-knowledge-base`
 > 报告性质：只读盘点 + 新增本文档。本轮未修改任何已有项目代码、文档、测试、备份或真实数据库。
 
+> **时效说明（后补，不代表原报告生成时的结论）**：本原报告生成于 2026-11-17，反映当时 `refactor/user-context` 分支状态，其中关于"#46 未实施 / 检索范围过滤留待后续"的描述均为 **PR #55、#56 合并前的历史记录**，原样保留以还原当时的决策背景。此后 Issue #46 已由 PR #56（`849daad`，2026-11-19 合并，正文含 `Closes #46`）完成：`main` 现已实现关键词检索、语义检索主查与回查、Agent 多轮检索按当前用户可见范围过滤，统一规则见 `shared/document_visibility.py`，并有 `test_search_access_scope.py` 回归测试。下文对涉及 #46 的 7 处原结论逐条追加"〔当前状态〕"标注；未标注部分仍为 2026-11-17 当时的记录，请勿将原文误读为"原报告生成时 #46 已完成"。
+
 ---
 
 ## 1. 项目背景与本轮整理目标
 
-个人知识库项目按 GitHub Issue #45～#54 顺序逐项修复与整理。经逐 Issue 实施与验收，#45～#54 均已完成开发并通过各自验收；其中 #46 按既定计划**未实施**（检索范围问题保留待办）。
+个人知识库项目按 GitHub Issue #45～#54 顺序逐项修复与整理。经逐 Issue 实施与验收，#45～#54 均已完成开发并通过各自验收；其中 #46 按既定计划**未实施**（检索范围问题保留待办）。〔当前状态：#46 后由 PR #56（`849daad`，2026-11-19 合并）完成并关闭，原文系合并前记录。〕
 
 本轮目标：
 1. 形成一份完整、准确、可追溯的 #45～#54 验收记录；
@@ -26,7 +28,7 @@
 | Issue | 主题 | 核心改动 | 关键业务规则 | 回归测试 | 最终验收状态 |
 |---|---|---|---|---|---|
 | #45 | 用户上下文统一 | 后端 `shared/user_context.py` 提供 `get_current_user`（`Depends`）；前端 `api.ts`/`App.tsx`/`MistakeView.tsx` 统一 `localStorage.currentUser` + `MOCK_USERS`；15 个接口接入当前用户上下文 | 后端不静默使用默认用户；前端模拟用户可回退张三；公开接口不强制 user_id | `test_user_context.py`(4)、`test_user_context_api.py`(10) | ✅ 已验收 |
-| #46 | 搜索范围问题 | **未实施**（按既定计划保留） | search / Agent 当前**不**按所有者或公开范围限定结果，留待 #46 | 无（本 Issue 未实施） | ⏸ 未实施／保留待办 |
+| #46 | 搜索范围问题 | **未实施**（按既定计划保留） | search / Agent 当前**不**按所有者或公开范围限定结果，留待 #46 | 无（本 Issue 未实施） | ⏸ 未实施／保留待办〔当前状态：已由 PR #56（`849daad`）完成并关闭；本行为合并前历史记录，测试见 `test_search_access_scope.py`。〕 |
 | #47 | 文档软删除与生命周期 | `ingest/models.py` 加 `is_deleted/deleted_at`；迁移脚本；`document_repo`/`reindex`/`search`/`chunk_repo` 过滤软删除；删除逻辑（后于 #54 迁入 `document_service`）含孤立文件 write-ahead 补偿清单 | 软删除/恢复/永久删除仅所有者；软删文档不出现在列表、正文、收藏、标签、文件夹与检索；孤立文件清单预登记→确认→清理+幂等重试 | `test_document_lifecycle.py`(11)、`test_document_lifecycle_recheck.py`(16) | ✅ 已验收 |
 | #48 | 文件夹与文档归属 | `folder_service.py` 归属校验：仅自有未删文档可加入自有文件夹；公开文件夹不再批量改文档 is_public | 规则 A：他人公开文档也不得加入自己文件夹；私有文件夹对非所有者拒绝；文件夹公开与文档公开是两个独立状态 | `test_folder_ownership.py`(19) | ✅ 已验收 |
 | #49 | 收藏规则 | `folder_service.py` 收藏新增/取消/列表：可收藏自有或公开资源；取消只删关系；列表隐藏不可见资源 | 收藏是私有关系，不复制不改归属；新增须可见；列表按当前浏览者过滤软删/转私有资源 | `test_favorite_access_rules.py`(19) | ✅ 已验收 |
@@ -34,12 +36,12 @@
 | #51 | 全局共享标签 | `Tag.creator_id` + 迁移脚本；名称 `strip+casefold` 全局唯一；他人可对自有文档使用共享标签；标签文档按可见范围过滤；置顶全局生效 | 历史 `creator_id=NULL` 标签无人可删；仅创建者可删；**有关联文档的标签禁止删除**（Issue 原文裁决） | `test_tag_rules.py`(17) | ✅ 已验收 |
 | #52 | 知识采集与 Embedding | 新增 `ingest/service/ingest_service.py`；收录流程临时文件→解析→切分→Embedding→正式文件迁移→单事务；共享 Embedding `shared/embedding.py`；README 说明图片/视频仅占位 | 空内容拒绝；URL 校验 http/https + hostname，保留原始 source_url；清理失败记录路径/阶段/原因，不静默跳过 | `test_ingest_flow.py`(22) | ✅ 已验收 |
 | #53 | 错题模块归属与统计 | 新增 `mistake/domain/models.py` 为 `Mistake`/`MistakeReviewRecord` 唯一定义，ingest 侧兼容重导出；`shared/db.py` 显式注册；router+3 service 改新 import | 错题总数=实际记录；`total_reviews` 累计字段 vs `recorded_review_count` 记录条数；趋势 UTC；推荐仅 pending/reviewing，权重/阈值/排序锁定 | `test_mistake_data_scope.py`(15)、`docs/mistake-business-rules.md` | ✅ 已验收 |
-| #54 | 工程整理 | 路由按业务域拆分（4 个 controller + 原有 mistake），`api/router.py` 缩为纯汇总；删除逻辑迁入 `document_service`；可见性公共函数；文档更新；语义检索软删测试补齐 | 路径/方法/契约不变（39 路径冻结）；#47 删除语义不变；#49/#50 复用同一可见性函数；检索范围仍留待 #46 | `test_issue54_structure.py`(5) + 新增 `test_search.py::test_semantic_search_excludes_soft_deleted_document` | ✅ 已验收 |
+| #54 | 工程整理 | 路由按业务域拆分（4 个 controller + 原有 mistake），`api/router.py` 缩为纯汇总；删除逻辑迁入 `document_service`；可见性公共函数；文档更新；语义检索软删测试补齐 | 路径/方法/契约不变（39 路径冻结）；#47 删除语义不变；#49/#50 复用同一可见性函数；检索范围仍留待 #46〔当前状态：检索范围已由后续 PR #56 完成；此处为原报告合并前记录。〕 | `test_issue54_structure.py`(5) + 新增 `test_search.py::test_semantic_search_excludes_soft_deleted_document` | ✅ 已验收 |
 
 ### 矛盾排查结论
 - 本次抽查了 `document_repo.py`、`reindex_service.py`、`manage/domain/models.py`、`shared/db.py`、`mistake/controller/router.py`、3 个 mistake service、`chunk_repo.py`、`search.py`、`api/router.py`、前端 3 文件的实际 diff，改动内容与上述归属一致，未发现明显矛盾。
 - `api/router.py` 已确认注册 mistake → ingest → retrieve → agent → manage 五个域路由，`main.py` 以 `/api/v1` 前缀统一挂载。
-- #54 专项核查确认：可见性公共函数 `is_document_visible_to_user` / `visible_document_condition` 被 #49、#50 复用；`tag_service` 与 `folder_service` 中若干独立判断属既定业务规则（公开入口/归属口径），条件一致，未强行统一；检索范围未改。
+- #54 专项核查确认：可见性公共函数 `is_document_visible_to_user` / `visible_document_condition` 被 #49、#50 复用；`tag_service` 与 `folder_service` 中若干独立判断属既定业务规则（公开入口/归属口径），条件一致，未强行统一；检索范围未改。〔当前状态：检索范围在 #54 后由 PR #56 / Issue #46 完成；本条"未改"指 #54 本次整理未触碰检索范围，为合并前记录。〕
 
 ---
 
@@ -53,7 +55,7 @@
 - **标签（#51）**：全局共享、名称规范化唯一、置顶全局；仅创建者可删且必须无关联文档；历史无创建者标签无人可删。
 - **收录（#52）**：共享 Embedding 单实现；临时文件事务化迁移；失败补偿可追踪；图片/视频仅占位。
 - **错题（#53）**：模型归属 mistake 域；统计/趋势（UTC）/推荐口径见 `docs/mistake-business-rules.md`；跨用户 API 隔离经真实路由集成测试验证。
-- **工程边界（#54）**：api 层只做适配与汇总；业务规则在 service；可见性口径单一定义；检索范围过滤**不在**本次范围。
+- **工程边界（#54）**：api 层只做适配与汇总；业务规则在 service；可见性口径单一定义；检索范围过滤**不在**本次范围。〔当前状态："不在本次范围"指不在 #54 范围；该能力已由 Issue #46 / PR #56 完成，为合并前记录。〕
 
 ---
 
@@ -126,6 +128,7 @@ fe699e7 Update README.md
 ## 6. 尚未解决的问题与风险
 
 1. **#46 检索访问范围过滤（明确留给 #46）**：`search` / Agent 当前只接入用户上下文，不按所有者或公开范围限定结果。证据：`retrieve/controller/router.py` 注释"仅接入当前用户上下文；检索范围过滤规则由 #46 实现"，`search.py` 仅有软删文档排除（#47）。**不要误记为已解决。**
+   > 〔当前状态（PR #56 合并后，后补；原上文为合并前记录）〕：Issue #46 已由 PR #56（`849daad`，正文含 `Closes #46`）完成。现 `retrieve/controller/router.py` 注释为"当前用户上下文真正参与检索范围隔离"，`search.py` / `chunk_repo.py` 统一应用 `shared/document_visibility.py` 的 `visible_document_condition` 与 `require_user_id`，关键词与语义检索主查/回查、Agent 多轮检索均按当前用户可见范围过滤并有 `test_search_access_scope.py` 覆盖。原"不要误记为已解决"系针对合并前状态，现已解决，勿再作为当前待办。
 2. **历史 warning（非本次缺陷）**：`datetime.utcnow()` 废弃告警、SQLAlchemy SAWarning（Subquery coercing to select）、Starlette `httpx` deprecation。属既有技术债，不影响功能与验收。
 3. **真实库历史孤儿数据**：此前核查发现真实库存在指向不存在 mistake_id 的历史复习记录（未清理）；本轮按要求未触碰真实库 `backend/pkb.db`（该文件被 `.gitignore` 排除、未被 git 跟踪）。
 4. **SQLite 外键未启用**：ORM 级联删除依赖 SQLAlchemy relationship；应避免对相关模型使用 bulk delete 绕过 ORM。
@@ -159,7 +162,7 @@ fe699e7 Update README.md
 ## 8. 后续建议
 
 1. 提交前由负责人确认 `backend/apply_user_context.py` 与 `_ISSUE_PATCHES/`、`.workbuddy/` 的处理方式（建议均不纳入代码提交；如需版本化备份另行归档）。
-2. #46 检索范围规则单独排期，明确"仅本人 + 公开"口径后再实施，并补充相应回归测试；避免与 #50 正文口径混淆。
+2. #46 检索范围规则单独排期，明确"仅本人 + 公开"口径后再实施，并补充相应回归测试；避免与 #50 正文口径混淆。〔当前状态：该建议已落实——口径确定为"本人（含私有）＋他人公开、排除他人私有与软删"，由 PR #56 合并并补充 `test_search_access_scope.py`；本条为合并前历史建议。〕
 3. 生产化前处理认证授权、CORS 收窄与密钥管理；评估 SQLite 外键启用或文档中明确 ORM 级联的约束。
 4. 历史 warning 作为技术债清单单独跟踪，不并入本次 Issue 验收结论。
 5. 如需提交，建议按 Issue 逻辑分组或一次性提交全部 #45～#54 改动， commit message 明确范围；本轮**未执行**任何提交。
