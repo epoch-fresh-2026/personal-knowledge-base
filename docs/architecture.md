@@ -82,7 +82,8 @@ personal-knowledge-base/
 │  │  ├─ config.py                # 数据库、LLM、Embedding 等公共配置
 │  │  ├─ embedding.py             # 唯一的 Embedding 供应商调用实现（get_embedding）
 │  │  ├─ llm.py                   # LLM 客户端（chat_completion）
-│  │  └─ user_context.py          # 模拟用户上下文依赖 get_current_user（Issue #45）
+│  │  ├─ user_context.py          # 模拟用户上下文依赖 get_current_user（Issue #45）
+│  │  └─ document_visibility.py   # 可见性规则单一定义（Issue #46）：is_document_visible_to_user / visible_document_condition / require_user_id
 │  ├─ modules/
 │  │  ├─ ingest/                  # 文档收录与解析
 │  │  │  ├─ controller/router.py  # 收录 HTTP 路由（upload / url）
@@ -107,7 +108,8 @@ personal-knowledge-base/
 │  │     └─ service/              # 知识点统计、复习推荐、学习分析
 │  ├─ migrations/                 # 数据库迁移脚本
 │  ├─ tests/                      # 自动化测试
-│  ├─ uploads/                    # 上传文件存储目录
+│  ├─ uploads/                    # 上传文件的正式存储目录
+│  ├─ .ingest_tmp/                # 收录临时目录（独立于 uploads，由 TEMP_DIR 指定，运行时按需生成）
 │  ├─ requirements.txt
 │  └─ .env.example
 ├─ docs/
@@ -146,7 +148,7 @@ Issue #54 后，API 路由已按真实业务域拆分到各模块的 `controller
 
 统一入口为 `modules.ingest.service.ingest_service`（Issue #52）：
 
-1. **文件上传**：先把文件写入 `uploads/.ingest_tmp` 临时目录，再解析文本；空内容直接判定失败，不留半成品。
+1. **文件上传**：先把文件写入 `.ingest_tmp` 临时目录（由 `ingest_service.TEMP_DIR` 指定，独立于正式 `uploads/` 目录），再解析文本；空内容直接判定失败，不留半成品。
 2. **URL 收录**：先做 http/https + hostname 基础校验，抓取网页并用 BeautifulSoup 提取文本，保存用户原始 `source_url`；空内容同样失败终止。
 3. 调用 `split_markdown` 对文本分块。
 4. 调用 `embedding_service.generate_chunk_embeddings`，其底层是 `shared.embedding.get_embedding`（唯一的 Embedding 供应商实现）；任一 chunk 向量化失败则整体收录失败。
@@ -181,7 +183,11 @@ Issue #54 后，API 路由已按真实业务域拆分到各模块的 `controller
 - `folder_service`：文件夹创建/重命名/删除、文档与文件夹关联、公开文件夹、公共广场与收藏（Issue #48/#49）。
 - `tag_service`：标签创建/删除/置顶、文档与标签关联（Issue #51）。
 
-「未删除 且 [所有者本人 或 已公开]」这一可见性口径统一由 `document_service.is_document_visible_to_user` / `visible_document_condition` 提供，供正文读取（#50）与收藏（#49）复用，避免多入口各自实现出不同版本。
+「未删除 且 [所有者本人 或 已公开]」这一可见性口径**单一定义在 `shared/document_visibility.py`**（`is_document_visible_to_user` / `visible_document_condition`，以及 fail-closed 守卫 `require_user_id`），Issue #46 上移到 shared 层，供检索与资料管理共同复用，避免多入口各自实现出不同版本。各模块按实际调用情况描述如下：
+
+- `retrieve`（`search.py`、`chunk_repo.py`）**直接**从 `shared.document_visibility` 导入检索过滤条件；
+- `document_service` 对这三个符号做转发导出（re-export，与单一定义是同一函数对象）；`manage` 的正文读取路由（`controller/router.py`）、`folder_service` 及部分既有测试仍经该转发入口导入，属兼容保留，不是第二份实现；
+- `document_service.list_documents` 使用 `visible_document_condition` 做文档筛选，`folder_service.get_my_favorites` 用它过滤文档收藏，正文读取路由用 `is_document_visible_to_user`；`tag_service.list_documents_by_tag`（标签关联文档查询）亦直接复用该条件。详见第 7、11.1 节。
 
 HTTP 路由位于 `modules/manage/controller/router.py`，仅做请求/响应适配与错误映射。
 
@@ -196,6 +202,8 @@ HTTP 路由位于 `modules/manage/controller/router.py`，仅做请求/响应适
 3. **个性化复习建议**：筛选当前用户的待复习和复习中错题，根据复习状态、知识点薄弱情况和距上次复习时间计算规则评分，返回优先级及可解释推荐理由。已掌握错题不进入推荐列表。
 
 复习操作复用错题复习接口，更新状态、累计复习次数和最近复习时间。推荐结果当前为动态计算结果，没有单独持久化为复习任务表。
+
+> 分层现状说明（与代码一致）：mistake 模块未做彻底的 Controller/Service 拆分。错题 CRUD、状态更新与复习完成（`controller/router.py` 的 `create_mistake`、`update_mistake`、`delete_mistake`、`update_mistake_status`、`complete_mistake_review`）直接在 Router 中通过 SQLAlchemy 完成单表读写与事务提交；知识点统计、复习推荐、学习概览与趋势（`knowledge_point_service`、`recommendation_service`、`analytics_service`）则下沉在 service 层。这是历史实现取舍，Router 在这些入口直接持有 `db` 并调用 `add/commit/query`，并非纯适配层。本轮为保持文档与代码一致而如实记录，未为凑齐机械分层新增空的 Service/Repository 文件（参见第 3、7 节"不为目录整齐而机械分层"原则）。
 
 ## 5. 前端结构与页面职责
 
@@ -298,7 +306,7 @@ flowchart TB
 - **ingest**：文件/URL 收录、解析、切分、批量向量化编排与 Document/Chunk 持久化；供应商 Embedding 调用复用 shared，不重复实现。
 - **retrieve**：关键词/语义/混合检索；按调用方传入的当前用户范围检索，不判断身份来源；访问范围过滤已由 Issue #46（PR #56）实现，规则复用 `shared/document_visibility.py`。
 - **agent**：问题改写、检索工具调用、补充检索判断与答案组织；不直接访问数据库，检索访问范围由 API 层适配器传入。
-- **manage**：文档（含删除生命周期）、文件夹、标签、收藏、公开资料；可见性规则统一在 document_service。
+- **manage**：文档（含删除生命周期）、文件夹、标签、收藏、公开资料；可见性规则单一定义在 `shared/document_visibility.py`，`document_service` 仅转发导出该规则供本域复用。
 - **mistake**：错题、复习记录、知识点统计、复习推荐与学习分析，模型归属本模块。
 - **api**：仅 HTTP 请求/响应适配、参数校验、依赖注入与路由汇总，不承载复杂业务规则。
 
@@ -316,13 +324,13 @@ sequenceDiagram
     participant SVC as ingest_service
     participant P as 解析与切分
     participant EMB as shared.embedding
-    participant FS as uploads 目录
+    participant FS as 文件目录（.ingest_tmp / uploads）
     participant DB as SQLite
 
     U->>FE: 选择并上传文件
     FE->>API: POST /api/v1/documents/upload
     API->>SVC: ingest_upload_file(bytes, filename, ...)
-    SVC->>FS: 写入 uploads/.ingest_tmp 临时文件
+    SVC->>FS: 写入 .ingest_tmp 临时文件（独立于 uploads）
     SVC->>P: 提取文本（空内容则失败终止）
     P-->>SVC: 文本
     SVC->>P: split_markdown 分块
