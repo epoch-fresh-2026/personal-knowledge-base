@@ -280,6 +280,63 @@ def test_tag_documents_exclude_soft_deleted(ctx):
     assert "zs_deleted" not in zhang and "ls_deleted" not in lisi
 
 
+def test_tag_documents_reuses_shared_visibility_rule(ctx, monkeypatch):
+    """C2 整改回归：证明 tag_service 实际调用 shared 的可见性函数，且业务语义等价。
+
+    通过 monkeypatch 包装 service 模块命名空间中的 visible_document_condition，
+    记录真实调用及传入的 user_id；包装器仍委托给原函数，不改变任何业务行为。
+    """
+    from shared.document_visibility import (
+        visible_document_condition as shared_condition,
+    )
+    from modules.manage.service import tag_service
+
+    client, db = ctx
+
+    # 记录 service 内部对 shared 函数的每一次调用及其 user_id 参数
+    call_log = []
+
+    def spy(user_id):
+        call_log.append(user_id)
+        return shared_condition(user_id)  # 委托原函数，保证查询条件真实有效
+
+    monkeypatch.setattr(tag_service, "visible_document_condition", spy)
+
+    docs = tag_service.list_documents_by_tag(db, "Python", "u_zhangsan")
+
+    # 证明 service 确实调用了 shared 函数，且调用参数为当前用户 ID
+    assert call_log == ["u_zhangsan"], (
+        f"tag_service 未按预期调用 shared.visible_document_condition，调用记录：{call_log}"
+    )
+
+    # 业务结果断言（完整保留）：本人（含私有）+ 他人公开，排除他人私有与软删
+    ids = {d.id for d in docs}
+    expected = {
+        d.id for d in db.query(Document).all()
+        if (not d.is_deleted)
+        and any(
+            dt.document_id == d.id and dt.tag_id == "tag_zs"
+            for dt in db.query(DocumentTag).all()
+        )
+        and (d.owner_id == "u_zhangsan" or d.is_public)
+    }
+    assert ids == expected
+    assert "zs_public" in ids and "zs_private" in ids
+    assert "ls_public" in ids and "ls_private" not in ids
+    assert "zs_deleted" not in ids
+
+
+def test_tag_documents_fail_closed_on_missing_user(ctx):
+    """C2 整改回归：直接调用 service 时缺失 user_id 应 fail-closed，而非退化为全局公开查询。"""
+    import pytest
+    from shared.document_visibility import UserScopeRequiredError
+    from modules.manage.service import tag_service
+
+    _, db = ctx
+    with pytest.raises(UserScopeRequiredError):
+        tag_service.list_documents_by_tag(db, "Python", None)
+
+
 # ---------- 置顶：全局共享 ----------
 
 def test_pin_tag_is_global_state(ctx):

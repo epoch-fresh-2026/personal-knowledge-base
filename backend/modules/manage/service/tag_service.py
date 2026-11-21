@@ -5,6 +5,10 @@ from sqlalchemy.orm import Session
 from modules.manage.domain.models import Tag, DocumentTag
 from modules.ingest.domain.models import Document
 
+# C2 整改：标签关联文档查询的可见性口径直接复用 shared 单一定义，
+# 与检索、正文读取、收藏保持一致，避免多入口各自实现出不同版本。
+from shared.document_visibility import visible_document_condition
+
 
 def _normalize_name(name: str) -> str:
     """标签名称规范化：去首尾空白 + 统一大小写（casefold），用于唯一性比较。"""
@@ -177,8 +181,9 @@ def list_documents_by_tag(db: Session, tag_name: str, user_id: str):
         )
         .filter(
             DocumentTag.tag_id == tag.id,
-            Document.is_deleted == False,
-            (Document.owner_id == user_id) | (Document.is_public == True),
+            # 复用 shared 单一定义的可见性条件（未删除 且 [本人 或 已公开]），
+            # 与检索/正文/收藏同一口径；含 fail-closed 的 user_id 校验。
+            visible_document_condition(user_id),
         )
         .all()
     )
